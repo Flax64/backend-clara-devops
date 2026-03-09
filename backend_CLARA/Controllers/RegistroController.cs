@@ -7,7 +7,8 @@ using System.Collections;
 namespace backend_CLARA.Controllers
 {
     /// <summary>
-    /// Controlador que se encarga de gestionar las peticiones relacionadas con el registro de usuarios.
+    /// Controlador que se encarga de gestionar las peticiones relacionadas con la autorizacion y registro de usuarios en el sistema. 
+    /// Permite registrar nuevos usuarios y obtener información relacionada con los géneros disponibles para el registro.
     /// </summary>
     [Route("api/[controller]")]
     [ApiController]
