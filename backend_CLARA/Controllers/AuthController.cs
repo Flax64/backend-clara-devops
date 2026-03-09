@@ -213,6 +213,22 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
+                    // Validar si el es la misma contraseña
+                    string queryPass = "SELECT COUNT(*) FROM usuarios WHERE password_Usuario = @password and email_Usuario = @correo";
+                    bool existePass = false;
+
+                    using (MySqlCommand cmd = new MySqlCommand(queryPass, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@password", request.NuevaPassword);
+                        cmd.Parameters.AddWithValue("@correo", correoSeguro); // Identificamos de quién es
+                        existePass = Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+                    }
+
+                    if (existePass)
+                    {
+                        return BadRequest("La nueva contraseña no puede ser igual a la anterior.");
+                    }
+
                     string queryUpdate = "UPDATE usuarios SET password_Usuario = @newpass WHERE email_Usuario = @correo";
                     using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn))
                     {
@@ -241,7 +257,7 @@ namespace backend_CLARA.Controllers
             string passwordApp = "fzat yxzn kjby kmpe";
 
             // Construimos la URL mágica a la que el usuario le dará clic (Ruta 2)
-            string urlVerificacion = $"https://localhost:7100/api/auth/verificar-clic?t={token}";
+            string urlVerificacion = $"http://DESKTOP-24HK526:5132/api/auth/verificar-clic?t={token}";
 
             string cuerpoHtml = $@"
                 <div style='font-family: Arial; text-align: center; padding: 20px;'>

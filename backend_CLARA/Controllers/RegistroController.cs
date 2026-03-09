@@ -37,14 +37,26 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. Si no existe, procedemos a insertar el nuevo usuario
+                    // 2. Extraemos el rol del usuario (por defecto dejare el de paciente
+                    string rolQuery = "SELECT id_Rol FROM roles WHERE nombre = 'Paciente'";
+                    int idRol = 0;
+                    if (request.IdRol == 0)
+                    { 
+                        using (MySqlCommand rolCmd = new MySqlCommand(rolQuery, conn))
+                        {
+                            idRol = Convert.ToInt32(rolCmd.ExecuteScalar());
+                        }
+                    }
+
+
+                    // 3. Si no existe, procedemos a insertar el nuevo usuario
                     string insertQuery = "INSERT INTO usuarios (id_Genero, id_Estatus,id_Rol, nombre_Usuario, apellido_P, apellido_M, email_Usuario, password_Usuario, telefono, fecha_Nacimiento) " +
                         "VALUES (@idGenero, @idEstatus, @idRol, @nombre, @apellidoP, @apellidoM, @correo, @password, @telefono, @fechaNacimiento)";
                     using (MySqlCommand insertCmd = new MySqlCommand(insertQuery, conn))
                     {
                         insertCmd.Parameters.AddWithValue("@idGenero", request.IdGenero);
                         insertCmd.Parameters.AddWithValue("@idEstatus", request.IdEstatus);
-                        insertCmd.Parameters.AddWithValue("@idRol", request.IdRol);
+                        insertCmd.Parameters.AddWithValue("@idRol", idRol);
                         insertCmd.Parameters.AddWithValue("@nombre", request.Nombre);
                         insertCmd.Parameters.AddWithValue("@apellidoP", request.ApellidoPaterno);
                         insertCmd.Parameters.AddWithValue("@apellidoM", request.ApellidoMaterno);
@@ -71,6 +83,7 @@ namespace backend_CLARA.Controllers
                 return StatusCode(500, new { message = "Error en el servidor.", error = ex.Message });
             }
         }
+
 
         [HttpGet("generos")]
         public IActionResult ObtenerGeneros()
