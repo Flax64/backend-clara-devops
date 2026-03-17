@@ -23,13 +23,13 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
                     // ¡La consulta SQL adaptada exactamente a tu diagrama!
-                    string query = @"
-                    SELECT v.id_Venta, v.fecha_Venta, v.nombre_Cliente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Vendedor, 
-                    v.total_Venta, m.nombre AS metodo_Pago
-                    FROM VENTAS v
-                    INNER JOIN USUARIOS u ON v.id_Usuario = u.id_Usuario
-                    INNER JOIN METODOS_PAGO m ON v.id_Metodo = m.id_Metodo
-                    ORDER BY v.fecha_Venta DESC, v.id_Venta ASC ";
+                    // 1. Actualiza el SELECT para pedir la hora y ordenar por ella también
+                    string query = @"SELECT v.id_Venta, v.fecha_Venta, v.hora_Venta, v.nombre_Cliente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Vendedor, 
+                                    v.total_Venta, m.nombre AS metodo_Pago
+                                    FROM VENTAS v
+                                    INNER JOIN USUARIOS u ON v.id_Usuario = u.id_Usuario
+                                    INNER JOIN METODOS_PAGO m ON v.id_Metodo = m.id_Metodo
+                                    ORDER BY v.fecha_Venta DESC, v.hora_Venta DESC, v.id_Venta ASC ";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
@@ -37,11 +37,21 @@ namespace backend_CLARA.Controllers
                         {
                             while (reader.Read())
                             {
+                                // Protegemos el código por si las ventas viejas tienen la hora vacía (NULL)
+                                string horaFormateada = "--:--";
+                                if (reader["hora_Venta"] != DBNull.Value)
+                                {
+                                    // MySQL devuelve el tipo TIME como un TimeSpan en C#
+                                    TimeSpan tiempo = (TimeSpan)reader["hora_Venta"];
+                                    // Lo convertimos a una fecha temporal solo para sacarle el formato de 12 horas (AM/PM)
+                                    horaFormateada = new DateTime(tiempo.Ticks).ToString("hh:mm tt");
+                                }
+
                                 listaVentas.Add(new VentaDTO
                                 {
                                     Id = Convert.ToInt32(reader["id_Venta"]),
-                                    // Como es tipo DATE, lo formateamos a Día/Mes/Año
-                                    FechaHora = Convert.ToDateTime(reader["fecha_Venta"]).ToString("dd/MM/yyyy"),
+                                    Fecha = Convert.ToDateTime(reader["fecha_Venta"]).ToString("dd/MM/yyyy"),
+                                    Hora = horaFormateada,
                                     Cliente = reader["nombre_Cliente"].ToString(),
                                     Vendedor = reader["nombre_Vendedor"].ToString(),
                                     Total = Convert.ToDecimal(reader["total_Venta"]),
@@ -130,14 +140,16 @@ namespace backend_CLARA.Controllers
                         try
                         {
                             // 1. Insertar la Venta principal
-                            // Asumo que id_Estatus 1 es "Completada"
-                            string queryVenta = @"INSERT INTO VENTAS (id_Estatus, id_Metodo, id_Usuario, fecha_Venta, total_Venta, nombre_Cliente) 
-                                          VALUES (1, @metodo, @usuario, CURDATE(), @total, @cliente);
-                                          SELECT LAST_INSERT_ID();"; // Pedimos el ID recién creado
+                            // ¡Cambiamos el id_Estatus a 5 (Completada) y agregamos id_Consulta!
+                            string queryVenta = @"INSERT INTO VENTAS (id_Estatus, id_Consulta, id_Metodo, id_Usuario, fecha_Venta, hora_Venta, total_Venta, nombre_Cliente) 
+                            VALUES (5, @idConsulta, @metodo, @usuario, CURDATE(), CURTIME(), @total, @cliente);
+                            SELECT LAST_INSERT_ID();";
 
                             int nuevoIdVenta = 0;
                             using (MySqlCommand cmdVenta = new MySqlCommand(queryVenta, conn, transaccion))
                             {
+                                // Si viene nulo, mandamos un DBNull a MySQL
+                                cmdVenta.Parameters.AddWithValue("@idConsulta", request.IdConsulta.HasValue ? request.IdConsulta.Value : (object)DBNull.Value);
                                 cmdVenta.Parameters.AddWithValue("@metodo", request.IdMetodoPago);
                                 cmdVenta.Parameters.AddWithValue("@usuario", request.IdUsuario);
                                 cmdVenta.Parameters.AddWithValue("@total", request.TotalVenta);
@@ -171,7 +183,15 @@ namespace backend_CLARA.Controllers
                                     cmdStock.ExecuteNonQuery();
                                 }
                             }
-
+                            if (request.IdConsulta.HasValue)
+                            {
+                                string queryUpdateConsulta = "UPDATE CONSULTAS SET id_Estatus = 6 WHERE id_Consulta = @idConsulta";
+                                using (MySqlCommand cmdConsulta = new MySqlCommand(queryUpdateConsulta, conn, transaccion))
+                                {
+                                    cmdConsulta.Parameters.AddWithValue("@idConsulta", request.IdConsulta.Value);
+                                    cmdConsulta.ExecuteNonQuery();
+                                }
+                            }
                             // Si todo salió bien, guardamos definitivamente (Commit)
                             transaccion.Commit();
                             return Ok(new { message = "Venta registrada exitosamente.", idGenerado = nuevoIdVenta });
@@ -226,23 +246,11 @@ namespace backend_CLARA.Controllers
 
                     // B) Traer los medicamentos de esa venta (El Carrito)
                     // ¡NUEVO!: También pedimos la concentración aquí
-                    string queryDetalle = @"
-    SELECT 
-        dv.id_Medicamento, 
-        m.nombre_Medicamento, 
-        m.concentracion_Valor, 
-        m.concentracion_Unidad, 
-        SUM(dv.cantidad) AS cantidad, 
-        m.precio_Medicamento 
-    FROM DETALLE_VENTA dv
-    INNER JOIN MEDICAMENTOS m ON dv.id_Medicamento = m.id_Medicamento
-    WHERE dv.id_Venta = @id
-    GROUP BY 
-        dv.id_Medicamento, 
-        m.nombre_Medicamento, 
-        m.concentracion_Valor, 
-        m.concentracion_Unidad, 
-        m.precio_Medicamento";
+                    string queryDetalle = @"SELECT dv.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, 
+                    SUM(dv.cantidad) AS cantidad, m.precio_Medicamento FROM DETALLE_VENTA dv
+                    INNER JOIN MEDICAMENTOS m ON dv.id_Medicamento = m.id_Medicamento
+                    WHERE dv.id_Venta = @id
+                    GROUP BY dv.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, m.precio_Medicamento";
 
                     using (MySqlCommand cmdDet = new MySqlCommand(queryDetalle, conn))
                     {
@@ -450,6 +458,106 @@ namespace backend_CLARA.Controllers
             }
         }
 
+        // =======================================================
+        // GET: OBTENER PACIENTES CON CONSULTAS (Para el buscador)
+        // =======================================================
+        [HttpGet("consultas-pendientes")]
+        public IActionResult ObtenerConsultasPendientes()
+        {
+            try
+            {
+                List<object> listaConsultas = new List<object>();
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    // Unimos CONSULTAS -> CITAS -> PACIENTES -> USUARIOS para sacar el nombre real
+                    string query = @"
+                    SELECT c.id_Consulta, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Paciente 
+                    FROM CONSULTAS c
+                    INNER JOIN CITAS ci ON c.id_Cita = ci.id_Cita
+                    INNER JOIN PACIENTES p ON ci.id_Paciente = p.id_Paciente
+                    INNER JOIN USUARIOS u ON p.id_Usuario = u.id_Usuario
+                    WHERE c.id_Estatus = 5
+                    ORDER BY c.id_Consulta DESC LIMIT 50";
 
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    using (MySqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            listaConsultas.Add(new
+                            {
+                                IdConsulta = Convert.ToInt32(reader["id_Consulta"]),
+                                // Lo mostramos así: "Juan Perez "
+                                Nombre = reader["nombre_Paciente"].ToString()
+                            });
+                        }
+                    }
+                }
+                return Ok(listaConsultas);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error al cargar pacientes.", error = ex.Message });
+            }
+        }
+
+        // =======================================================
+        // GET: OBTENER LOS MEDICAMENTOS DE ESA RECETA
+        // =======================================================
+        // =======================================================
+        // 2. GET: OBTENER LOS MEDICAMENTOS DE ESA RECETA (CORREGIDO)
+        // =======================================================
+        [HttpGet("receta/{idConsulta}")]
+        public IActionResult ObtenerReceta(int idConsulta)
+        {
+            try
+            {
+                List<object> receta = new List<object>();
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    // Ya no pedimos duración ni frecuencia para evitar que el programa choque con los textos
+                    string query = @"
+                SELECT dr.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, 
+                       m.precio_Medicamento, m.stock_Medicamento
+                FROM DETALLE_RECETA dr
+                INNER JOIN MEDICAMENTOS m ON dr.id_Medicamento = m.id_Medicamento
+                WHERE dr.id_Consulta = @idConsulta";
+
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@idConsulta", idConsulta);
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                // Formateamos el nombre (Ej. Paracetamol (500mg))
+                                string nombreMostrado = reader["nombre_Medicamento"].ToString();
+                                if (reader["concentracion_Valor"] != DBNull.Value && reader["concentracion_Unidad"] != DBNull.Value)
+                                {
+                                    decimal valorDecimal = Convert.ToDecimal(reader["concentracion_Valor"]);
+                                    nombreMostrado = $"{nombreMostrado} ({valorDecimal.ToString("0.##")}{reader["concentracion_Unidad"]})";
+                                }
+
+                                receta.Add(new
+                                {
+                                    Id = Convert.ToInt32(reader["id_Medicamento"]),
+                                    Nombre = nombreMostrado,
+                                    Precio = Convert.ToDecimal(reader["precio_Medicamento"]),
+                                    Stock = Convert.ToInt32(reader["stock_Medicamento"]),
+                                    Cantidad = 1 // <--- SOLUCIÓN: Siempre mandamos 1 caja por defecto
+                                });
+                            }
+                        }
+                    }
+                }
+                return Ok(receta);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "Error al cargar receta.", error = ex.Message });
+            }
+        }
     }
 }

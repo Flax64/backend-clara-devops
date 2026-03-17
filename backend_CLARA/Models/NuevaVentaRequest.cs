@@ -6,6 +6,7 @@
         public int IdMetodoPago { get; set; } // Ej. 1 para Efectivo
         public string NombreCliente { get; set; }
         public decimal TotalVenta { get; set; }
+        public int? IdConsulta { get; set; }
         public List<DetalleNuevaVenta> Detalles { get; set; }
     }
 }
