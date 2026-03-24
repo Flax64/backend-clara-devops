@@ -32,7 +32,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string Query = "SELECT COUNT(*) FROM usuarios WHERE email_Usuario = @correo AND BINARY password_Usuario = @password";
+                    string Query = "SELECT COUNT(*) FROM usuarios WHERE BINARY email_Usuario = @correo AND BINARY password_Usuario = @password";
                     using (MySqlCommand cmd = new MySqlCommand(Query, conn))
                     {
                         cmd.Parameters.AddWithValue("@correo", request.Email);

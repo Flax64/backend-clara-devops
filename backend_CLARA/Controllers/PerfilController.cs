@@ -111,6 +111,7 @@ namespace backend_CLARA.Controllers
                 return StatusCode(500, new { message = "Error al actualizar perfil", error = ex.Message });
             }
         }
+
         [HttpPut("cambiar-password/{correo}")]
         public IActionResult CambiarPassword(string correo, [FromBody] CambiarPasswordRequest request)
         {
