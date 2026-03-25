@@ -173,12 +173,19 @@ namespace backend_CLARA.Controllers
                     }
 
                     // 2. ACTUALIZAR DATOS PRINCIPALES
+                    // Quitamos el password de la consulta base
                     string queryUpdate = @"UPDATE USUARIOS SET 
                         id_Estatus = @idEstatus, id_Genero = @idGenero, id_Rol = @idRol, 
                         nombre_Usuario = @nombre, apellido_P = @apPaterno, apellido_M = @apMaterno, 
-                        email_Usuario = @email, password_Usuario = @password, 
-                        telefono = @telefono, fecha_Nacimiento = @fechaNac 
-                        WHERE id_Usuario = @id";
+                        email_Usuario = @email, telefono = @telefono, fecha_Nacimiento = @fechaNac ";
+
+                    // Si el administrador escribió una contraseña nueva, la agregamos a la instrucción SQL
+                    if (!string.IsNullOrWhiteSpace(request.Password))
+                    {
+                        queryUpdate += ", password_Usuario = @password ";
+                    }
+
+                    queryUpdate += " WHERE id_Usuario = @id";
 
                     using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn))
                     {
@@ -190,9 +197,15 @@ namespace backend_CLARA.Controllers
                         cmd.Parameters.AddWithValue("@apPaterno", request.ApellidoPaterno);
                         cmd.Parameters.AddWithValue("@apMaterno", string.IsNullOrEmpty(request.ApellidoMaterno) ? (object)DBNull.Value : request.ApellidoMaterno);
                         cmd.Parameters.AddWithValue("@email", request.Email);
-                        cmd.Parameters.AddWithValue("@password", request.Password);
                         cmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         cmd.Parameters.AddWithValue("@fechaNac", request.FechaNacimiento);
+
+                        // Si escribió contraseña, agregamos también el parámetro
+                        if (!string.IsNullOrWhiteSpace(request.Password))
+                        {
+                            cmd.Parameters.AddWithValue("@password", request.Password);
+                        }
+
                         cmd.ExecuteNonQuery();
                     }
 
