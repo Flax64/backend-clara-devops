@@ -78,12 +78,20 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ⚠️ NOTA IMPORTANTE DE BASE DE DATOS: 
-                    // Según tu diagrama, una Venta tiene "Detalles de Venta". 
-                    // Para poder borrar la venta principal, primero debemos borrar sus detalles 
-                    // (los medicamentos que se vendieron en ese ticket) para no violar la llave foránea.
+                    // ✨ PASO 0: Antes de borrar nada, averiguamos si esta venta tenía una consulta ligada
+                    int? idConsultaRevertir = null;
+                    string queryGetConsulta = "SELECT id_Consulta FROM VENTAS WHERE id_Venta = @id";
+                    using (MySqlCommand cmdGet = new MySqlCommand(queryGetConsulta, conn))
+                    {
+                        cmdGet.Parameters.AddWithValue("@id", id);
+                        object result = cmdGet.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                        {
+                            idConsultaRevertir = Convert.ToInt32(result);
+                        }
+                    }
 
-                    // 1. ¡NUEVO!: Primero regresamos el stock al inventario antes de borrar los registros
+                    // 1. Primero regresamos el stock al inventario
                     string queryDevolverStock = "UPDATE MEDICAMENTOS m INNER JOIN DETALLE_VENTA dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
                     using (MySqlCommand cmdDevolver = new MySqlCommand(queryDevolverStock, conn))
                     {
@@ -91,7 +99,7 @@ namespace backend_CLARA.Controllers
                         cmdDevolver.ExecuteNonQuery();
                     }
 
-                    // 2. Ahora sí, borramos los detalles (los hijos)
+                    // 2. Borramos los detalles (los hijos)
                     string queryDetalles = "DELETE FROM DETALLE_VENTA WHERE id_Venta = @id";
                     using (MySqlCommand cmdDetalles = new MySqlCommand(queryDetalles, conn))
                     {
@@ -99,22 +107,30 @@ namespace backend_CLARA.Controllers
                         cmdDetalles.ExecuteNonQuery();
                     }
 
-                    // 3. Ahora sí, borramos la venta principal (el padre)
+                    // 3. Borramos la venta principal (el padre)
                     string queryVenta = "DELETE FROM VENTAS WHERE id_Venta = @id";
                     using (MySqlCommand cmdVenta = new MySqlCommand(queryVenta, conn))
                     {
                         cmdVenta.Parameters.AddWithValue("@id", id);
-
                         int filasAfectadas = cmdVenta.ExecuteNonQuery();
 
-                        // Verificamos si realmente se borró algo
                         if (filasAfectadas > 0)
                         {
-                            return Ok(new { message = "Venta eliminada correctamente." });
+                            // ✨ PASO 4: Si se borró la venta y tenía consulta, la regresamos a estado 5 (Pendiente)
+                            if (idConsultaRevertir.HasValue)
+                            {
+                                string queryRevConsulta = "UPDATE CONSULTAS SET id_Estatus = 5 WHERE id_Consulta = @idConsulta";
+                                using (MySqlCommand cmdRev = new MySqlCommand(queryRevConsulta, conn))
+                                {
+                                    cmdRev.Parameters.AddWithValue("@idConsulta", idConsultaRevertir.Value);
+                                    cmdRev.ExecuteNonQuery();
+                                }
+                            }
+
+                            return Ok(new { message = "Venta eliminada correctamente y consulta revertida a pendiente." });
                         }
                         else
                         {
-                            // Si el ID no existía, devolvemos un error 404
                             return NotFound(new { message = "No se encontró la venta con ese ID." });
                         }
                     }
@@ -477,7 +493,8 @@ namespace backend_CLARA.Controllers
                     INNER JOIN CITAS ci ON c.id_Cita = ci.id_Cita
                     INNER JOIN PACIENTES p ON ci.id_Paciente = p.id_Paciente
                     INNER JOIN USUARIOS u ON p.id_Usuario = u.id_Usuario
-                    WHERE c.id_Estatus = 5
+                    WHERE c.id_Estatus = 5 
+                    AND ci.fecha_Cita >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
                     ORDER BY c.id_Consulta DESC LIMIT 50";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
