@@ -70,6 +70,16 @@ namespace backend_CLARA.Controllers
 
                         if (filasAfectadas > 0)
                         {
+                            // Obtenemos el ID que MySQL le acaba de dar al Usuario
+                            long idNuevoUsuario = insertCmd.LastInsertedId;
+                            // Lo registramos automáticamente en la tabla PACIENTES
+                            string insertPacienteQuery = "INSERT INTO PACIENTES (id_Usuario) VALUES (@idUsuario)";
+                            using (MySqlCommand pacienteCmd = new MySqlCommand(insertPacienteQuery, conn))
+                            {
+                                pacienteCmd.Parameters.AddWithValue("@idUsuario", idNuevoUsuario);
+                                pacienteCmd.ExecuteNonQuery();
+                            }
+
                             return Ok(new { message = "Usuario registrado exitosamente." });
                         }
                         else
