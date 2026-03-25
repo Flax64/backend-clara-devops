@@ -13,5 +13,6 @@
         public string Genero { get; set; }
         public string CedulaProfesional { get; set; }
         public string Especialidad { get; set; }
+        public string Estatus { get; internal set; }
     }
 }
