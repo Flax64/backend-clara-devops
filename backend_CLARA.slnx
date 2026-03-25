@@ -1,4 +1,3 @@
 <Solution>
-  <Project Path="../Frontend-Farmacia/CLARA_proyecto/CLARA_proyecto.vbproj" />
   <Project Path="backend_CLARA/backend_CLARA.csproj" />
 </Solution>
