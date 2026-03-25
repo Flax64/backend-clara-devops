@@ -20,16 +20,19 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
+                    // ✨ 1. Agregamos e.nombre AS Estatus y el INNER JOIN ESTATUS
                     string query = @"
                         SELECT 
                             u.id_Usuario, u.nombre_Usuario, u.apellido_P, u.apellido_M, 
                             u.email_Usuario, r.nombre AS Rol, u.telefono, 
                             DATE_FORMAT(u.fecha_Nacimiento, '%Y-%m-%d') AS FechaNacimiento, 
                             g.nombre AS Genero,
-                            m.cedula_Profesional, m.especialidad
+                            m.cedula_Profesional, m.especialidad,
+                            e.nombre AS Estatus 
                         FROM USUARIOS u
                         INNER JOIN ROLES r ON u.id_Rol = r.id_Rol
                         INNER JOIN GENEROS g ON u.id_Genero = g.id_Genero
+                        INNER JOIN ESTATUS e ON u.id_Estatus = e.id_Estatus
                         LEFT JOIN MEDICOS m ON u.id_Usuario = m.id_Usuario
                         WHERE r.nombre != 'Paciente'";
 
@@ -50,7 +53,8 @@ namespace backend_CLARA.Controllers
                                 FechaNacimiento = reader.GetString(7),
                                 Genero = reader.GetString(8),
                                 CedulaProfesional = reader.IsDBNull(9) ? "" : reader.GetString(9),
-                                Especialidad = reader.IsDBNull(10) ? "" : reader.GetString(10)
+                                Especialidad = reader.IsDBNull(10) ? "" : reader.GetString(10),
+                                Estatus = reader.GetString(11) // ✨ 2. Leemos la nueva columna
                             });
                         }
                     }
