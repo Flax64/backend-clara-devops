@@ -27,7 +27,7 @@ namespace backend_CLARA.Controllers
                     conn.Open();
                     // ✅ Corregido: Agregado c.id_Proveedor y alias para estatus
                     string query = @"SELECT c.id_Compra, c.id_Proveedor, p.nombre_Proveedor, 
-                                            c.fecha_Compra, c.total_Compra, e.nombre AS nombre_Estatus 
+                                            c.fecha_Compra, c.hora_Compra, c.total_Compra, e.nombre AS nombre_Estatus 
                                      FROM COMPRAS c 
                                      INNER JOIN PROVEEDORES p ON c.id_Proveedor = p.id_Proveedor
                                      INNER JOIN ESTATUS e ON c.id_Estatus = e.id_Estatus
@@ -38,12 +38,22 @@ namespace backend_CLARA.Controllers
                     {
                         while (r.Read())
                         {
+                            // 1. Extraemos la hora de MySQL (TimeSpan)
+                            // 2. La convertimos a formato 12 horas (hh:mm tt)
+                            // 3. Reemplazamos "am/pm" por "a. m./p. m." para que luzca perfecto
+                            TimeSpan ts = (TimeSpan)r["hora_Compra"];
+                            string horaFormateada = DateTime.Today.Add(ts)
+                                                    .ToString("hh:mm tt", System.Globalization.CultureInfo.InvariantCulture)
+                                                    .ToLower()
+                                                    .Replace("am", "a. m.")
+                                                    .Replace("pm", "p. m.");
                             lista.Add(new
                             {
                                 idCompra = r["id_Compra"],
                                 idProveedor = r["id_Proveedor"],
                                 proveedor = r["nombre_Proveedor"],
-                                fecha = r["fecha_Compra"],
+                                fecha = r["fecha_Compra"], 
+                                hora = horaFormateada,
                                 total = r["total_Compra"],
                                 estatus = r["nombre_Estatus"]
                             });
@@ -293,6 +303,51 @@ namespace backend_CLARA.Controllers
                     }
                     catch (Exception ex) { trans.Rollback(); return BadRequest(ex.Message); }
                 }
+            }
+        }
+
+        // =======================================================
+        // 6. GET: OBTENER TODOS LOS MEDICAMENTOS (Para Compras)
+        // =======================================================
+        [HttpGet("medicamentos")]
+        public IActionResult ObtenerTodosLosMedicamentos()
+        {
+            List<object> lista = new List<object>();
+            try
+            {
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    // ✨ MAGIA SQL MEJORADA: 
+                    // 1. Agregamos ' (' y ')' para los paréntesis.
+                    // 2. Sumar "+ 0" al valor es un truco de MySQL para borrar los ".00" innecesarios.
+                    // Resultado: "Paracetamol (500mg)"
+                    string query = @"SELECT 
+                                        id_Medicamento, 
+                                        CONCAT(nombre_Medicamento, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM concentracion_Valor)), concentracion_Unidad, ')') AS nombreCompuesto, 
+                                        precio_Medicamento 
+                                     FROM MEDICAMENTOS";
+
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    using (MySqlDataReader r = cmd.ExecuteReader())
+                    {
+                        while (r.Read())
+                        {
+                            lista.Add(new
+                            {
+                                Id = r["id_Medicamento"],
+                                Nombre = r["nombreCompuesto"].ToString(),
+                                Precio = r["precio_Medicamento"]
+                            });
+                        }
+                    }
+                }
+                return Ok(lista);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al obtener medicamentos: " + ex.Message });
             }
         }
     }
