@@ -125,7 +125,7 @@ namespace backend_CLARA.Controllers
         }
 
         // =======================================================
-        // 3. DELETE: ELIMINAR COMPRA (Revierte stock)
+        // 3. DELETE: CANCELAR COMPRA (Baja Lógica y revierte stock)
         // =======================================================
         [HttpDelete("{id}")]
         public IActionResult Eliminar(int id)
@@ -137,7 +137,23 @@ namespace backend_CLARA.Controllers
                 {
                     try
                     {
-                        // 1. Obtener detalles para restar el stock antes de borrar
+                        // 1. Verificar el estatus actual para no cancelar 2 veces
+                        int estatusActual = 0;
+                        using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM COMPRAS WHERE id_Compra = @id", conn, trans))
+                        {
+                            cmdCheck.Parameters.AddWithValue("@id", id);
+                            var result = cmdCheck.ExecuteScalar();
+                            if (result == null) return NotFound("La compra no existe.");
+                            estatusActual = Convert.ToInt32(result);
+                        }
+
+                        // ✨ ASUME QUE EL ESTATUS "CANCELADA" ES EL ID 4. 
+                        int idEstatusCancelada = 4;
+
+                        if (estatusActual == idEstatusCancelada)
+                            return BadRequest("Esta compra ya se encuentra cancelada.");
+
+                        // 2. Obtener detalles para restar el stock (revertir)
                         var viejos = new List<dynamic>();
                         using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM DETALLE_COMPRA WHERE id_Compra = @id", conn, trans))
                         {
@@ -148,6 +164,7 @@ namespace backend_CLARA.Controllers
                             }
                         }
 
+                        // 3. Revertir el stock en la tabla Medicamentos
                         foreach (var v in viejos)
                         {
                             using (var cmdUp = new MySqlCommand("UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
@@ -158,21 +175,16 @@ namespace backend_CLARA.Controllers
                             }
                         }
 
-                        // 2. Borrar hjos (detalles) y luego padre (compra)
-                        using (var cmdDelD = new MySqlCommand("DELETE FROM DETALLE_COMPRA WHERE id_Compra = @id", conn, trans))
+                        // 4. ✨ MAGIA: En lugar de borrar, ACTUALIZAMOS el estatus de la compra
+                        using (var cmdCancel = new MySqlCommand("UPDATE COMPRAS SET id_Estatus = @estatus WHERE id_Compra = @id", conn, trans))
                         {
-                            cmdDelD.Parameters.AddWithValue("@id", id);
-                            cmdDelD.ExecuteNonQuery();
-                        }
-
-                        using (var cmdDelC = new MySqlCommand("DELETE FROM COMPRAS WHERE id_Compra = @id", conn, trans))
-                        {
-                            cmdDelC.Parameters.AddWithValue("@id", id);
-                            cmdDelC.ExecuteNonQuery();
+                            cmdCancel.Parameters.AddWithValue("@estatus", idEstatusCancelada);
+                            cmdCancel.Parameters.AddWithValue("@id", id);
+                            cmdCancel.ExecuteNonQuery();
                         }
 
                         trans.Commit();
-                        return Ok(new { message = "Compra eliminada y stock revertido" });
+                        return Ok(new { message = "Compra cancelada y stock revertido" });
                     }
                     catch (Exception ex)
                     {
