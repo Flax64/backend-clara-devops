@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
 
+// --- SEGUNDO CONTROLADOR ---
 [Route("api/[controller]")]
 [ApiController]
 public class ProveedoresController : ControllerBase
