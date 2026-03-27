@@ -9,5 +9,6 @@
         public string Vendedor { get; set; }
         public decimal Total { get; set; }
         public string Metodo { get; set; }
+        public string Estatus { get; set; }
     }
 }

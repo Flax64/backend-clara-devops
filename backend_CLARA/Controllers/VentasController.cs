@@ -24,11 +24,13 @@ namespace backend_CLARA.Controllers
                     conn.Open();
                     // ¡La consulta SQL adaptada exactamente a tu diagrama!
                     // 1. Actualiza el SELECT para pedir la hora y ordenar por ella también
+                    // 2. Agregamos e.nombre AS nombre_Estatus y el INNER JOIN
                     string query = @"SELECT v.id_Venta, v.fecha_Venta, v.hora_Venta, v.nombre_Cliente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Vendedor, 
-                                    v.total_Venta, m.nombre AS metodo_Pago
+                                    v.total_Venta, m.nombre AS metodo_Pago, e.nombre AS nombre_Estatus
                                     FROM VENTAS v
                                     INNER JOIN USUARIOS u ON v.id_Usuario = u.id_Usuario
                                     INNER JOIN METODOS_PAGO m ON v.id_Metodo = m.id_Metodo
+                                    INNER JOIN ESTATUS e ON v.id_Estatus = e.id_Estatus
                                     ORDER BY v.fecha_Venta DESC, v.hora_Venta DESC, v.id_Venta ASC ";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -55,7 +57,8 @@ namespace backend_CLARA.Controllers
                                     Cliente = reader["nombre_Cliente"].ToString(),
                                     Vendedor = reader["nombre_Vendedor"].ToString(),
                                     Total = Convert.ToDecimal(reader["total_Venta"]),
-                                    Metodo = reader["metodo_Pago"].ToString()
+                                    Metodo = reader["metodo_Pago"].ToString(), 
+                                    Estatus = reader["nombre_Estatus"].ToString()
                                 });
                             }
                         }
@@ -77,68 +80,75 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-
-                    // ✨ PASO 0: Antes de borrar nada, averiguamos si esta venta tenía una consulta ligada
-                    int? idConsultaRevertir = null;
-                    string queryGetConsulta = "SELECT id_Consulta FROM VENTAS WHERE id_Venta = @id";
-                    using (MySqlCommand cmdGet = new MySqlCommand(queryGetConsulta, conn))
+                    using (MySqlTransaction transaccion = conn.BeginTransaction())
                     {
-                        cmdGet.Parameters.AddWithValue("@id", id);
-                        object result = cmdGet.ExecuteScalar();
-                        if (result != null && result != DBNull.Value)
+                        try
                         {
-                            idConsultaRevertir = Convert.ToInt32(result);
-                        }
-                    }
+                            // ✨ VERIFICAR QUE NO ESTÉ YA CANCELADA
+                            int estatusActual = 0;
+                            using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM VENTAS WHERE id_Venta = @id", conn, transaccion))
+                            {
+                                cmdCheck.Parameters.AddWithValue("@id", id);
+                                var result = cmdCheck.ExecuteScalar();
+                                if (result == null) return NotFound(new { message = "Venta no encontrada." });
+                                estatusActual = Convert.ToInt32(result);
+                            }
 
-                    // 1. Primero regresamos el stock al inventario
-                    string queryDevolverStock = "UPDATE MEDICAMENTOS m INNER JOIN DETALLE_VENTA dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
-                    using (MySqlCommand cmdDevolver = new MySqlCommand(queryDevolverStock, conn))
-                    {
-                        cmdDevolver.Parameters.AddWithValue("@id", id);
-                        cmdDevolver.ExecuteNonQuery();
-                    }
+                            int idEstatusCancelada = 4; 
+                            if (estatusActual == idEstatusCancelada)
+                                return BadRequest(new { message = "Esta venta ya se encuentra cancelada." });
 
-                    // 2. Borramos los detalles (los hijos)
-                    string queryDetalles = "DELETE FROM DETALLE_VENTA WHERE id_Venta = @id";
-                    using (MySqlCommand cmdDetalles = new MySqlCommand(queryDetalles, conn))
-                    {
-                        cmdDetalles.Parameters.AddWithValue("@id", id);
-                        cmdDetalles.ExecuteNonQuery();
-                    }
+                            // PASO 0: Ver si tenía consulta ligada
+                            int? idConsultaRevertir = null;
+                            using (MySqlCommand cmdGet = new MySqlCommand("SELECT id_Consulta FROM VENTAS WHERE id_Venta = @id", conn, transaccion))
+                            {
+                                cmdGet.Parameters.AddWithValue("@id", id);
+                                object res = cmdGet.ExecuteScalar();
+                                if (res != null && res != DBNull.Value) idConsultaRevertir = Convert.ToInt32(res);
+                            }
 
-                    // 3. Borramos la venta principal (el padre)
-                    string queryVenta = "DELETE FROM VENTAS WHERE id_Venta = @id";
-                    using (MySqlCommand cmdVenta = new MySqlCommand(queryVenta, conn))
-                    {
-                        cmdVenta.Parameters.AddWithValue("@id", id);
-                        int filasAfectadas = cmdVenta.ExecuteNonQuery();
+                            // 1. Regresamos el stock al inventario
+                            string queryDevolverStock = "UPDATE MEDICAMENTOS m INNER JOIN DETALLE_VENTA dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
+                            using (MySqlCommand cmdDevolver = new MySqlCommand(queryDevolverStock, conn, transaccion))
+                            {
+                                cmdDevolver.Parameters.AddWithValue("@id", id);
+                                cmdDevolver.ExecuteNonQuery();
+                            }
 
-                        if (filasAfectadas > 0)
-                        {
-                            // ✨ PASO 4: Si se borró la venta y tenía consulta, la regresamos a estado 5 (Pendiente)
+                            // 2. ✨ MAGIA: EN LUGAR DE BORRAR, ACTUALIZAMOS EL ESTATUS
+                            string queryCancelarVenta = "UPDATE VENTAS SET id_Estatus = @estatus WHERE id_Venta = @id";
+                            using (MySqlCommand cmdVenta = new MySqlCommand(queryCancelarVenta, conn, transaccion))
+                            {
+                                cmdVenta.Parameters.AddWithValue("@estatus", idEstatusCancelada);
+                                cmdVenta.Parameters.AddWithValue("@id", id);
+                                cmdVenta.ExecuteNonQuery();
+                            }
+
+                            // 3. Si tenía consulta, la regresamos a estado 5 (Pendiente)
                             if (idConsultaRevertir.HasValue)
                             {
                                 string queryRevConsulta = "UPDATE CONSULTAS SET id_Estatus = 5 WHERE id_Consulta = @idConsulta";
-                                using (MySqlCommand cmdRev = new MySqlCommand(queryRevConsulta, conn))
+                                using (MySqlCommand cmdRev = new MySqlCommand(queryRevConsulta, conn, transaccion))
                                 {
                                     cmdRev.Parameters.AddWithValue("@idConsulta", idConsultaRevertir.Value);
                                     cmdRev.ExecuteNonQuery();
                                 }
                             }
 
-                            return Ok(new { message = "Venta eliminada correctamente y consulta revertida a pendiente." });
+                            transaccion.Commit();
+                            return Ok(new { message = "Venta cancelada exitosamente y stock revertido." });
                         }
-                        else
+                        catch (Exception)
                         {
-                            return NotFound(new { message = "No se encontró la venta con ese ID." });
+                            transaccion.Rollback();
+                            throw;
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al intentar eliminar la venta.", error = ex.Message });
+                return StatusCode(500, new { message = "Error al intentar cancelar la venta.", error = ex.Message });
             }
         }
 
