@@ -64,7 +64,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Error al obtener lista: " + ex.Message });
+                return StatusCode(500, new { error = "Ocurrió un problema al cargar la lista de compras. Detalles: " + ex.Message });
             }
         }
 
@@ -118,7 +118,7 @@ namespace backend_CLARA.Controllers
                     catch (Exception ex)
                     {
                         trans.Rollback();
-                        return StatusCode(500, new { error = ex.Message });
+                        return StatusCode(500, new { error = "Ocurrió un problema al registrar la compra. Detalles: " + ex.Message });
                     }
                 }
             }
@@ -189,7 +189,7 @@ namespace backend_CLARA.Controllers
                     catch (Exception ex)
                     {
                         trans.Rollback();
-                        return StatusCode(500, new { error = ex.Message });
+                        return StatusCode(500, new { error = "Ocurrió un problema al intentar cancelar la compra. Detalles: " + ex.Message });
                     }
                 }
             }
@@ -247,7 +247,10 @@ namespace backend_CLARA.Controllers
                     return Ok(new { idProveedor = ((dynamic)cabecera).idProveedor, detalles });
                 }
             }
-            catch (Exception ex) { return BadRequest(ex.Message); }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "No se pudo recuperar la información de esta compra. Detalles: " + ex.Message });
+            }
         }
 
         // =======================================================
@@ -313,7 +316,11 @@ namespace backend_CLARA.Controllers
                         trans.Commit();
                         return Ok(new { message = "Actualizado con éxito" });
                     }
-                    catch (Exception ex) { trans.Rollback(); return BadRequest(ex.Message); }
+                    catch (Exception ex)
+                    {
+                        trans.Rollback();
+                        return StatusCode(500, new { error = "Ocurrió un problema al actualizar la compra. Detalles: " + ex.Message });
+                    }
                 }
             }
         }
@@ -359,7 +366,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Error al obtener medicamentos: " + ex.Message });
+                return StatusCode(500, new { error = "Error al cargar el catálogo de medicamentos. Detalles: " + ex.Message });
             }
         }
     }
