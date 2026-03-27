@@ -68,7 +68,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener las ventas.", error = ex.Message });
+                return StatusCode(500, new { error = "Ocurrió un problema al cargar la lista de ventas. Detalles: " + ex.Message });
             }
         }
         // Ruta DELETE para eliminar una venta por su ID
@@ -148,7 +148,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al intentar cancelar la venta.", error = ex.Message });
+                return StatusCode(500, new { error = "Ocurrió un problema al intentar cancelar la venta. Detalles: " + ex.Message });
             }
         }
 
@@ -232,7 +232,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al crear la venta.", error = ex.Message });
+                return StatusCode(500, new { error = "Ocurrió un problema al guardar la venta. Detalles: " + ex.Message });
             }
         }
 
@@ -312,7 +312,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener la venta.", error = ex.Message });
+                return StatusCode(500, new { error = "No se pudo recuperar la información de esta venta. Detalles: " + ex.Message });
             }
         }
 
@@ -396,7 +396,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al actualizar.", error = ex.Message });
+                return StatusCode(500, new { error = "Ocurrió un problema al actualizar la venta. Detalles: " + ex.Message });
             }
         }
 
@@ -431,7 +431,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al cargar métodos.", error = ex.Message });
+                return StatusCode(500, new { error = "Error al cargar la lista de métodos de pago. Detalles: " + ex.Message });
             }
         }
 
@@ -480,7 +480,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al cargar catálogo.", error = ex.Message });
+                return StatusCode(500, new { error = "Error al cargar el catálogo de productos. Detalles: " + ex.Message });
             }
         }
 
@@ -525,7 +525,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al cargar pacientes.", error = ex.Message });
+                return StatusCode(500, new { error = "Error al obtener la lista de pacientes en espera. Detalles: " + ex.Message });
             }
         }
 
@@ -583,7 +583,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al cargar receta.", error = ex.Message });
+                return StatusCode(500, new { error = "Error al cargar los medicamentos de la receta. Detalles: " + ex.Message });
             }
         }
     }
