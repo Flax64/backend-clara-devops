@@ -67,7 +67,7 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 2. CREAR MEDICAMENTO (CON REACTIVACIÓN INTELIGENTE) ---
+        // --- 2. CREAR MEDICAMENTO (CON REACTIVACIÓN INTELIGENTE Y VALIDACIÓN ESTRICTA) ---
         [HttpPost]
         public IActionResult CrearMedicamento([FromBody] MedicamentoRequest request)
         {
@@ -77,14 +77,14 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. BUSCAMOS SI YA EXISTE UNO EXACTAMENTE IGUAL
+                    // ✨ VALIDACIÓN BLINDADA: Ignora espacios extras y diferencias entre mayúsculas/minúsculas
                     string checkQuery = @"
                         SELECT m.id_Medicamento, e.nombre AS estatusNombre 
                         FROM MEDICAMENTOS m
                         INNER JOIN ESTATUS e ON m.id_Estatus = e.id_Estatus
-                        WHERE m.nombre_Medicamento = @nombre 
+                        WHERE TRIM(LOWER(m.nombre_Medicamento)) = TRIM(LOWER(@nombre)) 
                         AND m.concentracion_Valor = @valor 
-                        AND m.concentracion_Unidad = @unidad";
+                        AND TRIM(LOWER(m.concentracion_Unidad)) = TRIM(LOWER(@unidad))";
 
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
                     {
@@ -102,7 +102,7 @@ namespace backend_CLARA.Controllers
                                 // Si existe y está ACTIVO, rechazamos.
                                 if (estatusExistente != "Inactivo")
                                 {
-                                    return BadRequest(new { error = $"Ya existe un medicamento activo registrado como {request.Nombre} de {request.ConcentracionValor}{request.ConcentracionUnidad}." });
+                                    return BadRequest(new { error = $"Ya existe un medicamento activo registrado como '{request.Nombre.Trim()}' de {request.ConcentracionValor}{request.ConcentracionUnidad.Trim()}." });
                                 }
 
                                 // Si existe pero está INACTIVO, cerramos el lector y lo REACTIVAMOS abajo.
@@ -118,7 +118,7 @@ namespace backend_CLARA.Controllers
                                 using (MySqlCommand reactivarCmd = new MySqlCommand(reactivarQuery, conn))
                                 {
                                     reactivarCmd.Parameters.AddWithValue("@id", idExistente);
-                                    reactivarCmd.Parameters.AddWithValue("@desc", request.Descripcion);
+                                    reactivarCmd.Parameters.AddWithValue("@desc", request.Descripcion.Trim());
                                     reactivarCmd.Parameters.AddWithValue("@precio", request.Precio);
                                     reactivarCmd.ExecuteNonQuery();
                                 }
@@ -128,7 +128,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. SI NO EXISTE EN ABSOLUTO, LO CREAMOS NUEVO (Forzando stock a 0)
+                    // 2. SI NO EXISTE EN ABSOLUTO, LO CREAMOS NUEVO (Forzando stock a 0 y limpiando textos)
                     string insertQuery = @"
                         INSERT INTO MEDICAMENTOS 
                         (id_Estatus, nombre_Medicamento, descripcion_Medicamento, precio_Medicamento, stock_Medicamento, concentracion_Valor, concentracion_Unidad) 
@@ -136,11 +136,12 @@ namespace backend_CLARA.Controllers
 
                     using (MySqlCommand insertCmd = new MySqlCommand(insertQuery, conn))
                     {
-                        insertCmd.Parameters.AddWithValue("@nombre", request.Nombre);
-                        insertCmd.Parameters.AddWithValue("@desc", request.Descripcion);
+                        // Usamos .Trim() al insertar para que la base de datos se mantenga limpia desde el origen
+                        insertCmd.Parameters.AddWithValue("@nombre", request.Nombre.Trim());
+                        insertCmd.Parameters.AddWithValue("@desc", request.Descripcion.Trim());
                         insertCmd.Parameters.AddWithValue("@precio", request.Precio);
                         insertCmd.Parameters.AddWithValue("@valor", request.ConcentracionValor);
-                        insertCmd.Parameters.AddWithValue("@unidad", request.ConcentracionUnidad);
+                        insertCmd.Parameters.AddWithValue("@unidad", request.ConcentracionUnidad.Trim());
 
                         insertCmd.ExecuteNonQuery();
                     }
@@ -163,12 +164,12 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. VALIDACIÓN: Evitar que choque con OTRO medicamento que tenga el mismo nombre y concentración
+                    // ✨ VALIDACIÓN BLINDADA: Ignora espacios en blanco extras y mayúsculas/minúsculas
                     string checkQuery = @"
                         SELECT COUNT(*) FROM MEDICAMENTOS 
-                        WHERE nombre_Medicamento = @nombre 
+                        WHERE TRIM(LOWER(nombre_Medicamento)) = TRIM(LOWER(@nombre)) 
                         AND concentracion_Valor = @valor 
-                        AND concentracion_Unidad = @unidad 
+                        AND TRIM(LOWER(concentracion_Unidad)) = TRIM(LOWER(@unidad)) 
                         AND id_Medicamento != @id";
 
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
@@ -180,11 +181,11 @@ namespace backend_CLARA.Controllers
 
                         if (Convert.ToInt32(checkCmd.ExecuteScalar()) > 0)
                         {
-                            return BadRequest(new { error = $"Ya existe otro medicamento registrado como {request.Nombre} de {request.ConcentracionValor}{request.ConcentracionUnidad}." });
+                            return BadRequest(new { error = $"Ya existe otro medicamento registrado como '{request.Nombre}' de {request.ConcentracionValor}{request.ConcentracionUnidad}." });
                         }
                     }
 
-                    // 2. ACTUALIZAR (Ignoramos la columna de stock_Medicamento por completo)
+                    // 2. ACTUALIZAR (Ignoramos el stock)
                     string query = @"
                         UPDATE MEDICAMENTOS SET 
                         id_Estatus = @idEstatus, 
@@ -199,11 +200,11 @@ namespace backend_CLARA.Controllers
                     {
                         cmd.Parameters.AddWithValue("@id", id);
                         cmd.Parameters.AddWithValue("@idEstatus", request.IdEstatus);
-                        cmd.Parameters.AddWithValue("@nombre", request.Nombre);
-                        cmd.Parameters.AddWithValue("@desc", request.Descripcion);
+                        cmd.Parameters.AddWithValue("@nombre", request.Nombre.Trim());
+                        cmd.Parameters.AddWithValue("@desc", request.Descripcion.Trim());
                         cmd.Parameters.AddWithValue("@precio", request.Precio);
                         cmd.Parameters.AddWithValue("@valor", request.ConcentracionValor);
-                        cmd.Parameters.AddWithValue("@unidad", request.ConcentracionUnidad);
+                        cmd.Parameters.AddWithValue("@unidad", request.ConcentracionUnidad.Trim());
 
                         cmd.ExecuteNonQuery();
                     }
