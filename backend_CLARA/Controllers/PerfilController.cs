@@ -53,7 +53,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener perfil", error = ex.Message });
+                return StatusCode(500, new { error = "Ocurrió un problema al obtener el perfil. Detalles: " + ex.Message });
             }
         }
 
@@ -108,7 +108,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al actualizar perfil", error = ex.Message });
+                return StatusCode(500, new { error = "Ocurrió un problema al actualizar el perfil. Detalles: " + ex.Message });
             }
         }
 
@@ -166,7 +166,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error interno del servidor", error = ex.Message });
+                return StatusCode(500, new { error = "Error interno del servidor. Detalles: " + ex.Message });
             }
         }
     }

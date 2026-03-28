@@ -1,6 +1,8 @@
 ﻿using backend_CLARA.Models;
 using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
+using System;
+using System.Collections.Generic;
 
 namespace backend_CLARA.Controllers
 {
@@ -10,7 +12,7 @@ namespace backend_CLARA.Controllers
     {
         private readonly String _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
 
-        // 1. Obtener todos los roles (Usando el modelo Rol)
+        // 1. Obtener todos los roles
         [HttpGet]
         public IActionResult ObtenerRoles()
         {
@@ -45,11 +47,11 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener roles", error = ex.Message });
+                return StatusCode(500, new { error = "Error al obtener la lista de roles. Detalles: " + ex.Message });
             }
         }
 
-        // 2. Obtener todos los permisos que existen en el sistema (Usando el modelo Permiso)
+        // 2. Obtener todos los permisos que existen en el sistema
         [HttpGet("permisos")]
         public IActionResult ObtenerTodosLosPermisos()
         {
@@ -77,7 +79,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener los permisos", error = ex.Message });
+                return StatusCode(500, new { error = "Error al obtener el catálogo de permisos. Detalles: " + ex.Message });
             }
         }
 
@@ -108,7 +110,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener permisos del rol", error = ex.Message });
+                return StatusCode(500, new { error = "Error al obtener los permisos asignados a este rol. Detalles: " + ex.Message });
             }
         }
 
@@ -153,14 +155,14 @@ namespace backend_CLARA.Controllers
                         catch (Exception ex)
                         {
                             transaction.Rollback();
-                            return StatusCode(500, new { message = "Error al guardar los permisos.", error = ex.Message });
+                            return StatusCode(500, new { error = "Error al guardar los nuevos permisos. Detalles: " + ex.Message });
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error en el servidor", error = ex.Message });
+                return StatusCode(500, new { error = "Error interno del servidor. Detalles: " + ex.Message });
             }
         }
 
@@ -170,21 +172,19 @@ namespace backend_CLARA.Controllers
         {
             try
             {
-                long nuevoId = 0; // Variable para atrapar el nuevo ID
+                long nuevoId = 0;
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Validar que el rol no exista
                     string checkQuery = "SELECT COUNT(*) FROM ROLES WHERE nombre = @nombre";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
                     {
                         checkCmd.Parameters.AddWithValue("@nombre", request.Nombre);
                         int count = Convert.ToInt32(checkCmd.ExecuteScalar());
 
-                        // Si cuenta 1 o más, rechazamos la petición
                         if (count > 0)
                         {
-                            return BadRequest(new { message = "Ya existe un rol con este nombre." });
+                            return BadRequest(new { error = "Ya existe un rol con este nombre." });
                         }
                     }
 
@@ -193,15 +193,14 @@ namespace backend_CLARA.Controllers
                     {
                         cmd.Parameters.AddWithValue("@nombre", request.Nombre);
                         cmd.ExecuteNonQuery();
-                        nuevoId = cmd.LastInsertedId; // Atrapamos el ID que le dio MySQL
+                        nuevoId = cmd.LastInsertedId;
                     }
                 }
-                // Lo mandamos de regreso en el JSON
                 return Ok(new { message = "Rol creado exitosamente.", idRol = nuevoId });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al crear", error = ex.Message });
+                return StatusCode(500, new { error = "Error al crear el rol. Detalles: " + ex.Message });
             }
         }
 
@@ -214,7 +213,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Validar que el rol no exista
                     string checkQuery = "SELECT COUNT(*) FROM ROLES WHERE nombre = @nombre AND id_Rol != @idRol";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
                     {
@@ -224,7 +222,7 @@ namespace backend_CLARA.Controllers
 
                         if (count > 0)
                         {
-                            return BadRequest(new { message = "Ya existe otro rol con este nombre." });
+                            return BadRequest(new { error = "Ya existe otro rol con este nombre." });
                         }
                     }
 
@@ -236,15 +234,15 @@ namespace backend_CLARA.Controllers
                         cmd.ExecuteNonQuery();
                     }
                 }
-                return Ok(new { message = "Rol actualizado." });
+                return Ok(new { message = "Rol actualizado correctamente." });
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al actualizar", error = ex.Message });
+                return StatusCode(500, new { error = "Error al actualizar el rol. Detalles: " + ex.Message });
             }
         }
 
-        // 7. Eliminar rol (CON VALIDACIÓN DE USO Y LIMPIEZA DE PERMISOS)
+        // 7. Eliminar rol
         [HttpDelete("{idRol}")]
         public IActionResult EliminarRol(int idRol)
         {
@@ -253,12 +251,10 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Iniciamos una transacción para hacer las eliminaciones de forma segura
                     using (MySqlTransaction transaction = conn.BeginTransaction())
                     {
                         try
                         {
-                            // 1. VERIFICAMOS SI EL ROL ESTÁ EN USO EN LA TABLA USUARIOS
                             string checkQuery = "SELECT COUNT(*) FROM USUARIOS WHERE id_Rol = @idRol";
                             using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn, transaction))
                             {
@@ -267,14 +263,11 @@ namespace backend_CLARA.Controllers
 
                                 if (countUsuarios > 0)
                                 {
-                                    // Si está en uso, cancelamos la transacción y avisamos al frontend
                                     transaction.Rollback();
-                                    return BadRequest(new { message = "No se puede eliminar el rol porque actualmente está asignado a uno o más usuarios." });
+                                    return BadRequest(new { error = "No se puede eliminar el rol porque actualmente está asignado a uno o más usuarios." });
                                 }
                             }
 
-                            // 2. ELIMINAMOS LOS PERMISOS ASOCIADOS (Tabla puente)
-                            // Si no hacemos esto, MySQL bloquea el borrado por la llave foránea
                             string deletePermisosQuery = "DELETE FROM permisos_has_roles WHERE id_Rol = @idRol";
                             using (MySqlCommand cmdPermisos = new MySqlCommand(deletePermisosQuery, conn, transaction))
                             {
@@ -282,7 +275,6 @@ namespace backend_CLARA.Controllers
                                 cmdPermisos.ExecuteNonQuery();
                             }
 
-                            // 3. FINALMENTE, ELIMINAMOS EL ROL
                             string deleteRolQuery = "DELETE FROM ROLES WHERE id_Rol = @idRol";
                             using (MySqlCommand cmdRol = new MySqlCommand(deleteRolQuery, conn, transaction))
                             {
@@ -290,21 +282,20 @@ namespace backend_CLARA.Controllers
                                 cmdRol.ExecuteNonQuery();
                             }
 
-                            // Confirmamos que todos los pasos salieron bien
                             transaction.Commit();
                             return Ok(new { message = "Rol eliminado correctamente." });
                         }
                         catch (Exception ex)
                         {
                             transaction.Rollback();
-                            return StatusCode(500, new { message = "Error interno al intentar eliminar el rol.", error = ex.Message });
+                            return StatusCode(500, new { error = "Error interno al intentar eliminar el rol. Detalles: " + ex.Message });
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error de conexión con el servidor.", error = ex.Message });
+                return StatusCode(500, new { error = "Error de conexión con la base de datos. Detalles: " + ex.Message });
             }
         }
     }

@@ -3,19 +3,16 @@ using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
 using Org.BouncyCastle.Asn1.Ocsp;
 using System;
-using System.Collections;
+using System.Collections.Generic;
 
 namespace backend_CLARA.Controllers
 {
-    /// <summary>
-    /// Controlador que se encarga de gestionar las peticiones relacionadas con la autorizacion y registro de usuarios en el sistema. 
-    /// Permite registrar nuevos usuarios y obtener información relacionada con los géneros disponibles para el registro.
-    /// </summary>
     [Route("api/[controller]")]
     [ApiController]
     public class RegistroController : ControllerBase
     {
         private readonly String _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
+
         [HttpPost("registar")]
         public IActionResult Registrar([FromBody] RegistroRequest request)
         {
@@ -34,7 +31,7 @@ namespace backend_CLARA.Controllers
 
                         if (existe > 0)
                         {
-                            return BadRequest(new { message = "Este correo ya está registrado en el sistema." });
+                            return BadRequest(new { error = "Este correo ya está registrado en el sistema." });
                         }
                     }
 
@@ -42,13 +39,12 @@ namespace backend_CLARA.Controllers
                     string rolQuery = "SELECT id_Rol FROM roles WHERE nombre = 'Paciente'";
                     int idRol = 0;
                     if (request.IdRol == 0)
-                    { 
+                    {
                         using (MySqlCommand rolCmd = new MySqlCommand(rolQuery, conn))
                         {
                             idRol = Convert.ToInt32(rolCmd.ExecuteScalar());
                         }
                     }
-
 
                     // 3. Si no existe, procedemos a insertar el nuevo usuario
                     string insertQuery = "INSERT INTO usuarios (id_Genero, id_Estatus,id_Rol, nombre_Usuario, apellido_P, apellido_M, email_Usuario, password_Usuario, telefono, fecha_Nacimiento) " +
@@ -70,9 +66,7 @@ namespace backend_CLARA.Controllers
 
                         if (filasAfectadas > 0)
                         {
-                            // Obtenemos el ID que MySQL le acaba de dar al Usuario
                             long idNuevoUsuario = insertCmd.LastInsertedId;
-                            // Lo registramos automáticamente en la tabla PACIENTES
                             string insertPacienteQuery = "INSERT INTO PACIENTES (id_Usuario) VALUES (@idUsuario)";
                             using (MySqlCommand pacienteCmd = new MySqlCommand(insertPacienteQuery, conn))
                             {
@@ -84,17 +78,16 @@ namespace backend_CLARA.Controllers
                         }
                         else
                         {
-                            return BadRequest(new { message = "No se pudo completar el registro." });
+                            return BadRequest(new { error = "No se pudo completar el registro." });
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error en el servidor.", error = ex.Message });
+                return StatusCode(500, new { error = "Error en el servidor al intentar registrar. Detalles: " + ex.Message });
             }
         }
-
 
         [HttpGet("generos")]
         public IActionResult ObtenerGeneros()
@@ -106,7 +99,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Asegúrate de que el nombre de la tabla y columnas coincidan con tu BD real
                     string query = "SELECT id_Genero, nombre FROM generos";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -126,7 +118,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener géneros", error = ex.Message });
+                return StatusCode(500, new { error = "Error al obtener la lista de géneros. Detalles: " + ex.Message });
             }
         }
     }

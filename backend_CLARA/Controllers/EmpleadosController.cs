@@ -1,6 +1,8 @@
 ﻿using backend_CLARA.Models;
 using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
+using System;
+using System.Collections.Generic;
 
 namespace backend_CLARA.Controllers
 {
@@ -63,7 +65,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener empleados", error = ex.Message });
+                return StatusCode(500, new { error = "Error al obtener la lista de empleados. Detalles: " + ex.Message });
             }
         }
 
@@ -100,12 +102,12 @@ namespace backend_CLARA.Controllers
                                     return StatusCode(409, new
                                     {
                                         idUsuario = idExistente,
-                                        message = "Este correo ya pertenece a un paciente registrado en el sistema.\n\n¿Deseas actualizar sus datos y convertirlo en empleado?"
+                                        error = "Este correo ya pertenece a un paciente registrado en el sistema.\n\n¿Deseas actualizar sus datos y convertirlo en empleado?"
                                     });
                                 }
                                 else // Si existe y es cualquier otro rol (Mandamos código 400)
                                 {
-                                    return BadRequest(new { message = "Este correo ya está en uso por otro empleado y no está disponible." });
+                                    return BadRequest(new { error = "Este correo ya está en uso por otro empleado y no está disponible." });
                                 }
                             }
                         }
@@ -129,6 +131,7 @@ namespace backend_CLARA.Controllers
                         cmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         cmd.Parameters.AddWithValue("@fechaNac", request.FechaNacimiento);
                         cmd.ExecuteNonQuery();
+
                         // Obtenemos el ID del usuario recién creado
                         long idNuevoUsuario = cmd.LastInsertedId;
 
@@ -150,7 +153,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al crear", error = ex.Message });
+                return StatusCode(500, new { error = "Error al intentar crear al empleado. Detalles: " + ex.Message });
             }
         }
 
@@ -172,7 +175,7 @@ namespace backend_CLARA.Controllers
                         checkCmd.Parameters.AddWithValue("@id", id);
                         if (Convert.ToInt32(checkCmd.ExecuteScalar()) > 0)
                         {
-                            return BadRequest(new { message = "El correo ingresado ya pertenece a otro usuario en el sistema." });
+                            return BadRequest(new { error = "El correo ingresado ya pertenece a otro usuario en el sistema." });
                         }
                     }
 
@@ -275,11 +278,11 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al actualizar", error = ex.Message });
+                return StatusCode(500, new { error = "Error al actualizar los datos del empleado. Detalles: " + ex.Message });
             }
         }
 
-        // --- 4. ELIMINAR EMPLEADO ---
+        // --- 4. ELIMINAR EMPLEADO (BORRADO LÓGICO / DAR DE BAJA) ---
         [HttpDelete("{id}")]
         public IActionResult EliminarEmpleado(int id)
         {
@@ -289,44 +292,31 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. Si era médico, lo borramos primero de la tabla MEDICOS para que MySQL no se queje
-                    string queryBorrarMedico = "DELETE FROM MEDICOS WHERE id_Usuario = @id";
-                    using (MySqlCommand cmdMed = new MySqlCommand(queryBorrarMedico, conn))
-                    {
-                        cmdMed.Parameters.AddWithValue("@id", id);
-                        cmdMed.ExecuteNonQuery();
-                    }
+                    // ✨ EN LUGAR DE BORRAR, ACTUALIZAMOS SU ESTATUS A "INACTIVO"
+                    string queryBaja = @"
+                        UPDATE USUARIOS 
+                        SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Inactivo' LIMIT 1) 
+                        WHERE id_Usuario = @id";
 
-                    // 2. Ahora sí, intentamos borrarlo de la tabla principal de USUARIOS
-                    string queryBorrarUsuario = "DELETE FROM USUARIOS WHERE id_Usuario = @id";
-                    using (MySqlCommand cmdUsu = new MySqlCommand(queryBorrarUsuario, conn))
+                    using (MySqlCommand cmd = new MySqlCommand(queryBaja, conn))
                     {
-                        cmdUsu.Parameters.AddWithValue("@id", id);
-                        int filasAfectadas = cmdUsu.ExecuteNonQuery();
+                        cmd.Parameters.AddWithValue("@id", id);
+                        int filasAfectadas = cmd.ExecuteNonQuery();
 
                         if (filasAfectadas > 0)
                         {
-                            return Ok(new { message = "Empleado eliminado exitosamente." });
+                            return Ok(new { message = "Empleado dado de baja exitosamente." });
                         }
                         else
                         {
-                            return NotFound(new { message = "No se encontró el empleado." });
+                            return NotFound(new { error = "No se encontró el empleado a dar de baja." });
                         }
                     }
                 }
             }
-            catch (MySqlException ex)
-            {
-                // El error 1451 significa que este empleado tiene historial (citas, recetas, ventas)
-                if (ex.Number == 1451)
-                {
-                    return BadRequest(new { message = "No puedes eliminar a este empleado porque ya tiene historial registrado (citas, ventas, etc.). Por seguridad, te recomendamos editarlo y cambiar su Estatus a 'Inactivo'." });
-                }
-                return StatusCode(500, new { message = "Error de base de datos.", error = ex.Message });
-            }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error en el servidor.", error = ex.Message });
+                return StatusCode(500, new { error = "Error en el servidor al intentar dar de baja. Detalles: " + ex.Message });
             }
         }
 
@@ -392,7 +382,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Error al obtener catálogos", error = ex.Message });
+                return StatusCode(500, new { error = "Error al obtener los catálogos del sistema. Detalles: " + ex.Message });
             }
         }
     }
