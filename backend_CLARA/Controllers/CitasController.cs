@@ -12,9 +12,9 @@ namespace backend_CLARA.Controllers
     {
         private readonly string _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
 
-        // --- 1. LEER TODAS LAS CITAS ---
+        // --- 1. LEER TODAS LAS CITAS (CON FILTRO DE SEGURIDAD POR ROL) ---
         [HttpGet]
-        public IActionResult GetCitas()
+        public IActionResult GetCitas([FromQuery] string correo)
         {
             try
             {
@@ -22,6 +22,32 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
+
+                    string rolUsuario = "";
+                    int idUsuarioLogeado = 0;
+
+                    // 1. Buscamos qué rol tiene el correo
+                    if (!string.IsNullOrEmpty(correo))
+                    {
+                        string rolQuery = @"SELECT r.nombre, u.id_Usuario 
+                                            FROM USUARIOS u 
+                                            INNER JOIN ROLES r ON u.id_Rol = r.id_Rol 
+                                            WHERE u.email_Usuario = @correo LIMIT 1";
+                        using (MySqlCommand cmdRol = new MySqlCommand(rolQuery, conn))
+                        {
+                            cmdRol.Parameters.AddWithValue("@correo", correo);
+                            using (MySqlDataReader reader = cmdRol.ExecuteReader())
+                            {
+                                if (reader.Read())
+                                {
+                                    rolUsuario = reader.GetString(0);
+                                    idUsuarioLogeado = reader.GetInt32(1);
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Armamos la consulta base
                     string query = @"
                         SELECT 
                             c.id_Cita, 
@@ -36,22 +62,37 @@ namespace backend_CLARA.Controllers
                         INNER JOIN USUARIOS up ON p.id_Usuario = up.id_Usuario
                         INNER JOIN MEDICOS m ON c.id_Medico = m.id_Medico
                         INNER JOIN USUARIOS um ON m.id_Usuario = um.id_Usuario
-                        ORDER BY c.fecha_Cita DESC, c.hora_Cita DESC";
+                        WHERE 1=1 ";
+
+                    // ✨ REGLA DE SEGURIDAD: Si es paciente, filtramos solo sus citas
+                    if (rolUsuario == "Paciente")
+                    {
+                        query += " AND up.id_Usuario = @idUsuarioLogeado ";
+                    }
+
+                    query += " ORDER BY c.fecha_Cita DESC, c.hora_Cita DESC";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
-                    using (MySqlDataReader reader = cmd.ExecuteReader())
                     {
-                        while (reader.Read())
+                        if (rolUsuario == "Paciente")
                         {
-                            citas.Add(new CitaRead
+                            cmd.Parameters.AddWithValue("@idUsuarioLogeado", idUsuarioLogeado);
+                        }
+
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
                             {
-                                IdCita = reader.GetInt32(0),
-                                Paciente = reader.GetString(1),
-                                Medico = reader.GetString(2),
-                                Fecha = reader.GetString(3),
-                                Hora = reader.GetString(4),
-                                Estado = reader.GetString(5)
-                            });
+                                citas.Add(new CitaRead
+                                {
+                                    IdCita = reader.GetInt32(0),
+                                    Paciente = reader.GetString(1),
+                                    Medico = reader.GetString(2),
+                                    Fecha = reader.GetString(3),
+                                    Hora = reader.GetString(4),
+                                    Estado = reader.GetString(5)
+                                });
+                            }
                         }
                     }
                 }
@@ -71,13 +112,11 @@ namespace backend_CLARA.Controllers
             {
                 DateTime fechaHoraCita = DateTime.Parse($"{request.Fecha} {request.Hora}");
 
-                // 1. Validar que no sea en el pasado
                 if (fechaHoraCita < DateTime.Now)
                 {
                     return BadRequest(new { error = "No puedes agendar una cita en una fecha u hora que ya pasó." });
                 }
 
-                // 2. Validar intervalos de 15 minutos
                 if (fechaHoraCita.Minute % 15 != 0)
                 {
                     return BadRequest(new { error = "Las citas solo pueden agendarse en intervalos de 15 minutos (ej. 10:00, 10:15, 10:30)." });
@@ -87,17 +126,14 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 3. Validar si el médico está disponible a esa hora y no está ocupado
                     string errorDisponibilidad = ValidarDisponibilidad(conn, request.IdMedico, request.Fecha, request.Hora, 0);
                     if (errorDisponibilidad != null)
                     {
                         return BadRequest(new { error = errorDisponibilidad });
                     }
 
-                    // 4. Obtener el ID del estatus "Pendiente"
                     int idPendiente = ObtenerIdEstatus(conn, "Pendiente");
 
-                    // 5. Insertar
                     string query = "INSERT INTO CITAS (id_Estatus, id_Paciente, id_Medico, fecha_Cita, hora_Cita) VALUES (@estatus, @paciente, @medico, @fecha, @hora)";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
@@ -135,7 +171,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. Obtener estatus actual de la cita
                     int estatusActualId = 0;
                     string getEstatusQuery = "SELECT id_Estatus FROM CITAS WHERE id_Cita = @id";
                     using (MySqlCommand cmd = new MySqlCommand(getEstatusQuery, conn))
@@ -149,20 +184,17 @@ namespace backend_CLARA.Controllers
                     int idConfirmada = ObtenerIdEstatus(conn, "Confirmada");
                     int idPendiente = ObtenerIdEstatus(conn, "Pendiente");
 
-                    // 2. REGLA DE NEGOCIO: No regresar de Confirmada a Pendiente
                     if (estatusActualId == idConfirmada && request.IdEstatus == idPendiente)
                     {
                         return BadRequest(new { error = "Una cita que ya fue Confirmada no puede regresar a estado Pendiente." });
                     }
 
-                    // 3. Validar disponibilidad (ignorando esta misma cita)
                     string errorDisponibilidad = ValidarDisponibilidad(conn, request.IdMedico, request.Fecha, request.Hora, id);
                     if (errorDisponibilidad != null)
                     {
                         return BadRequest(new { error = errorDisponibilidad });
                     }
 
-                    // 4. Actualizar
                     string updateQuery = "UPDATE CITAS SET id_Paciente = @paciente, id_Medico = @medico, fecha_Cita = @fecha, hora_Cita = @hora, id_Estatus = @estatus WHERE id_Cita = @id";
                     using (MySqlCommand cmd = new MySqlCommand(updateQuery, conn))
                     {
@@ -192,8 +224,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-
-                    // Soft Delete -> Cambiar a Cancelada
                     int idCancelada = ObtenerIdEstatus(conn, "Cancelada");
 
                     string cancelQuery = "UPDATE CITAS SET id_Estatus = @estatus WHERE id_Cita = @id";
@@ -217,7 +247,7 @@ namespace backend_CLARA.Controllers
         }
 
         // ==========================================
-        // MÉTODOS AUXILIARES PRIVADOS Y DE AYUDA
+        // MÉTODOS AUXILIARES PRIVADOS
         // ==========================================
 
         private int ObtenerIdEstatus(MySqlConnection conn, string nombreEstatus)
@@ -231,12 +261,8 @@ namespace backend_CLARA.Controllers
 
         private string ValidarDisponibilidad(MySqlConnection conn, int idMedico, string fecha, string hora, int idCitaIgnorar)
         {
-            // 1. Validar que el médico trabaje ese día y a esa hora
-            // MySQL DAYOFWEEK: 1=Domingo, 2=Lunes... 7=Sábado
-            // Asumiendo que tu tabla DIAS usa id_Dia 1=Domingo o 1=Lunes (Ajusta la lógica de días según tu BD)
-            // Aquí haremos una consulta cruzada con HORARIOS
             DateTime fechaParsed = DateTime.Parse(fecha);
-            int diaSemanaMySql = (int)fechaParsed.DayOfWeek + 1; // Convierte a formato de MySQL (1 a 7)
+            int diaSemanaMySql = (int)fechaParsed.DayOfWeek + 1;
 
             string horarioQuery = @"
                 SELECT COUNT(*) FROM HORARIOS h
@@ -258,7 +284,6 @@ namespace backend_CLARA.Controllers
                 }
             }
 
-            // 2. Validar que no choque con otra cita (Pendiente o Confirmada)
             string choqueQuery = @"
                 SELECT COUNT(*) FROM CITAS 
                 WHERE id_Medico = @medico 
@@ -280,7 +305,251 @@ namespace backend_CLARA.Controllers
                 }
             }
 
-            return null; // Todo en orden
+            return null;
+        }
+
+        // ==========================================
+        // ✨ NUEVOS ENDPOINTS INTELIGENTES
+        // ==========================================
+
+        // --- OBTENER PACIENTES (FILTRA POR ROL USANDO EL CORREO) ---
+        [HttpGet("pacientes")]
+        public IActionResult GetPacientesCombo([FromQuery] string correo)
+        {
+            try
+            {
+                var lista = new List<object>();
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    string rolUsuario = "";
+                    int idUsuarioLogeado = 0;
+
+                    // 1. Buscamos qué rol tiene el correo que mandó Visual Basic
+                    if (!string.IsNullOrEmpty(correo))
+                    {
+                        string rolQuery = @"SELECT r.nombre, u.id_Usuario 
+                                            FROM USUARIOS u 
+                                            INNER JOIN ROLES r ON u.id_Rol = r.id_Rol 
+                                            WHERE u.email_Usuario = @correo LIMIT 1";
+                        using (MySqlCommand cmdRol = new MySqlCommand(rolQuery, conn))
+                        {
+                            cmdRol.Parameters.AddWithValue("@correo", correo);
+                            using (MySqlDataReader reader = cmdRol.ExecuteReader())
+                            {
+                                if (reader.Read())
+                                {
+                                    rolUsuario = reader.GetString(0);
+                                    idUsuarioLogeado = reader.GetInt32(1);
+                                }
+                            }
+                        }
+                    }
+
+                    // 2. Traemos a los pacientes
+                    string query = @"
+                        SELECT p.id_Paciente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P, ' ', IFNULL(u.apellido_M, '')) AS Nombre
+                        FROM PACIENTES p
+                        INNER JOIN USUARIOS u ON p.id_Usuario = u.id_Usuario
+                        WHERE u.id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1)";
+
+                    // ✨ REGLA DE NEGOCIO: Si es paciente, solo se ve a sí mismo
+                    if (rolUsuario == "Paciente")
+                    {
+                        query += " AND p.id_Usuario = @idUsuario";
+                    }
+
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    {
+                        if (rolUsuario == "Paciente")
+                        {
+                            cmd.Parameters.AddWithValue("@idUsuario", idUsuarioLogeado);
+                        }
+
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                lista.Add(new
+                                {
+                                    Id = reader.GetInt32(0),
+                                    Nombre = reader.GetString(1).Trim()
+                                });
+                            }
+                        }
+                    }
+                }
+                return Ok(lista);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al obtener pacientes: " + ex.Message });
+            }
+        }
+
+        // --- OBTENER MÉDICO DISPONIBLE AUTOMÁTICAMENTE ---
+        [HttpGet("medico-disponible")]
+        public IActionResult GetMedicoDisponible([FromQuery] string fecha, [FromQuery] string hora)
+        {
+            try
+            {
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    DateTime fechaParsed = DateTime.Parse(fecha);
+                    int diaSemanaMySql = (int)fechaParsed.DayOfWeek + 1; // 1=Domingo, 2=Lunes...
+
+                    // Buscamos un médico que SÍ trabaje ese día/hora y que NO tenga cita agendada
+                    string query = @"
+                        SELECT m.id_Medico, CONCAT('Dr. ', u.nombre_Usuario, ' ', u.apellido_P) AS Nombre
+                        FROM MEDICOS m
+                        INNER JOIN USUARIOS u ON m.id_Usuario = u.id_Usuario
+                        INNER JOIN HORARIOS h ON m.id_Medico = h.id_Medico
+                        WHERE h.id_Dia = @dia
+                          AND @hora >= h.hora_Entrada 
+                          AND @hora < h.hora_Salida
+                          AND u.id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1)
+                          AND m.id_Medico NOT IN (
+                              SELECT id_Medico FROM CITAS 
+                              WHERE fecha_Cita = @fecha 
+                              AND hora_Cita = @hora 
+                              AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))
+                          )
+                        LIMIT 1";
+
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@dia", diaSemanaMySql);
+                        cmd.Parameters.AddWithValue("@hora", hora);
+                        cmd.Parameters.AddWithValue("@fecha", fecha);
+
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                return Ok(new
+                                {
+                                    Id = reader.GetInt32(0),
+                                    Nombre = reader.GetString(1).Trim()
+                                });
+                            }
+                        }
+                    }
+                }
+
+                // Si la consulta no trajo a nadie, todos están ocupados o fuera de turno
+                return NotFound(new { error = "No hay médicos disponibles para la fecha y hora seleccionada." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al buscar médico disponible: " + ex.Message });
+            }
+        }
+        
+        // --- ENDPOINT AUXILIAR: OBTENER SOLO HORAS DISPONIBLES ---
+        [HttpGet("horas-disponibles")]
+        public IActionResult GetHorasDisponibles([FromQuery] string fecha)
+        {
+            try
+            {
+                DateTime fechaParsed = DateTime.Parse(fecha);
+                int diaSemanaMySql = (int)fechaParsed.DayOfWeek + 1; // 1=Domingo, 2=Lunes...
+                List<string> horasDisponibles = new List<string>();
+
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    // 1. Obtener los horarios de todos los médicos para ese día
+                    string queryHorarios = "SELECT id_Medico, hora_Entrada, hora_Salida FROM HORARIOS WHERE id_Dia = @dia";
+                    var horarios = new List<dynamic>();
+                    using (MySqlCommand cmd = new MySqlCommand(queryHorarios, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@dia", diaSemanaMySql);
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                horarios.Add(new
+                                {
+                                    IdMedico = reader.GetInt32(0),
+                                    Entrada = reader.GetTimeSpan(1),
+                                    Salida = reader.GetTimeSpan(2)
+                                });
+                            }
+                        }
+                    }
+
+                    // 2. Obtener todas las citas activas para ese día
+                    string queryCitas = "SELECT id_Medico, hora_Cita FROM CITAS WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))";
+                    var citas = new List<dynamic>();
+                    using (MySqlCommand cmd = new MySqlCommand(queryCitas, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@fecha", fecha);
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                citas.Add(new
+                                {
+                                    IdMedico = reader.GetInt32(0),
+                                    HoraCita = reader.GetTimeSpan(1)
+                                });
+                            }
+                        }
+                    }
+
+                    // 3. Generar intervalos de 15 min (de 08:00 a 20:00) y verificar disponibilidad
+                    TimeSpan horaActual = new TimeSpan(8, 0, 0);
+                    TimeSpan horaFin = new TimeSpan(20, 0, 0);
+                    TimeSpan intervalo = new TimeSpan(0, 15, 0);
+
+                    while (horaActual <= horaFin)
+                    {
+                        bool hayMedicoDisponible = false;
+
+                        foreach (var h in horarios)
+                        {
+                            // Si el médico trabaja en esta hora
+                            if (horaActual >= h.Entrada && horaActual < h.Salida)
+                            {
+                                // Verificar que el médico no tenga cita a esa misma hora
+                                bool tieneCita = false;
+                                foreach (var c in citas)
+                                {
+                                    if (c.IdMedico == h.IdMedico && c.HoraCita == horaActual)
+                                    {
+                                        tieneCita = true;
+                                        break;
+                                    }
+                                }
+
+                                if (!tieneCita)
+                                {
+                                    hayMedicoDisponible = true;
+                                    break; // Encontramos al menos a uno disponible
+                                }
+                            }
+                        }
+
+                        // Si al menos un médico puede atender a esta hora, la agregamos a la lista
+                        if (hayMedicoDisponible)
+                        {
+                            horasDisponibles.Add(horaActual.ToString(@"hh\:mm"));
+                        }
+
+                        horaActual = horaActual.Add(intervalo);
+                    }
+                }
+
+                return Ok(horasDisponibles);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al calcular horas disponibles: " + ex.Message });
+            }
         }
     }
 }
