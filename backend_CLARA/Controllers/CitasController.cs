@@ -246,6 +246,37 @@ namespace backend_CLARA.Controllers
             }
         }
 
+        // --- 5. CONFIRMAR CITA (ACCIÓN RÁPIDA) ---
+        [HttpPut("confirmar/{id}")]
+        public IActionResult ConfirmarCita(int id)
+        {
+            try
+            {
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    int idConfirmada = ObtenerIdEstatus(conn, "Confirmada");
+
+                    string query = "UPDATE CITAS SET id_Estatus = @estatus WHERE id_Cita = @id";
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@estatus", idConfirmada);
+                        cmd.Parameters.AddWithValue("@id", id);
+                        int afectadas = cmd.ExecuteNonQuery();
+
+                        if (afectadas > 0)
+                            return Ok(new { message = "La cita ha sido confirmada exitosamente." });
+                        else
+                            return NotFound(new { error = "No se encontró la cita especificada." });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al intentar confirmar la cita. Detalles: " + ex.Message });
+            }
+        }
+
         // ==========================================
         // MÉTODOS AUXILIARES PRIVADOS
         // ==========================================
