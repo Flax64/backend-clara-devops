@@ -197,5 +197,94 @@ namespace backend_CLARA.Controllers
                 return StatusCode(500, new { error = "Error al registrar el horario: " + ex.Message });
             }
         }
+
+        // --- 6. OBTENER UN HORARIO ESPECÍFICO (Para el Update) ---
+        [HttpGet("{id}")]
+        public IActionResult GetHorarioById(int id)
+        {
+            try
+            {
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string query = @"SELECT id_Horario, id_Dia, id_Medico, 
+                                     TIME_FORMAT(hora_Entrada, '%H:%i') as Entrada, 
+                                     TIME_FORMAT(hora_Salida, '%H:%i') as Salida 
+                                     FROM HORARIOS WHERE id_Horario = @id";
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", id);
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                return Ok(new
+                                {
+                                    IdHorario = reader.GetInt32(0),
+                                    IdDia = reader.GetInt32(1),
+                                    IdMedico = reader.GetInt32(2),
+                                    HoraEntrada = reader.GetString(3),
+                                    HoraSalida = reader.GetString(4)
+                                });
+                            }
+                        }
+                    }
+                }
+                return NotFound(new { error = "No se encontró el horario." });
+            }
+            catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+        }
+
+        // --- 7. ACTUALIZAR HORARIO (Con validación de choque) ---
+        [HttpPut("{id}")]
+        public IActionResult ActualizarHorario(int id, [FromBody] HorarioRequest request)
+        {
+            try
+            {
+                TimeSpan entrada = TimeSpan.Parse(request.HoraEntrada);
+                TimeSpan salida = TimeSpan.Parse(request.HoraSalida);
+
+                if (salida <= entrada) return BadRequest(new { error = "La hora de salida debe ser mayor a la de entrada." });
+
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    // ✨ VALIDACIÓN: Choque de horarios ignorando el ID actual (@id)
+                    string queryEmpalme = @"
+                        SELECT COUNT(*) FROM HORARIOS 
+                        WHERE id_Dia = @dia AND id_Horario != @id
+                        AND (@entrada < hora_Salida AND @salida > hora_Entrada)";
+
+                    using (MySqlCommand cmd = new MySqlCommand(queryEmpalme, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@dia", request.IdDia);
+                        cmd.Parameters.AddWithValue("@entrada", entrada);
+                        cmd.Parameters.AddWithValue("@salida", salida);
+                        cmd.Parameters.AddWithValue("@id", id);
+
+                        if (Convert.ToInt32(cmd.ExecuteScalar()) > 0)
+                        {
+                            return BadRequest(new { error = "Ese rango de horario ya está ocupado por otro médico o turno en este día." });
+                        }
+                    }
+
+                    string queryUpdate = @"UPDATE HORARIOS SET id_Dia = @dia, id_Medico = @medico, 
+                                          hora_Entrada = @entrada, hora_Salida = @salida 
+                                          WHERE id_Horario = @id";
+                    using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@dia", request.IdDia);
+                        cmd.Parameters.AddWithValue("@medico", request.IdMedico);
+                        cmd.Parameters.AddWithValue("@entrada", entrada);
+                        cmd.Parameters.AddWithValue("@salida", salida);
+                        cmd.Parameters.AddWithValue("@id", id);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                return Ok(new { message = "Horario actualizado correctamente." });
+            }
+            catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+        }
     }
 }
