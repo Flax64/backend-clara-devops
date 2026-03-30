@@ -440,65 +440,93 @@ namespace backend_CLARA.Controllers
 
         // --- 3. OBTENER HORAS DISPONIBLES (AHORA IGNORA LA CITA ACTUAL) ---
         [HttpGet("horas-disponibles")]
-        public IActionResult GetHorasDisponibles([FromQuery] string fecha, [FromQuery] int idCita = 0)
+        public IActionResult GetHorasDisponibles([FromQuery] string fecha, [FromQuery] int? idCita = null)
         {
             try
             {
-                DateTime fechaParsed = DateTime.Parse(fecha);
-                int diaSemanaMySql = (int)fechaParsed.DayOfWeek + 1;
-                List<string> horasDisponibles = new List<string>();
+                DateTime fechaSeleccionada = DateTime.Parse(fecha);
+                int diaSemana = (int)fechaSeleccionada.DayOfWeek + 1;
+
+                List<string> horasGeneradas = new List<string>();
 
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
 
-                    string queryHorarios = "SELECT id_Medico, hora_Entrada, hora_Salida FROM HORARIOS WHERE id_Dia = @dia";
-                    var horarios = new List<dynamic>();
-                    using (MySqlCommand cmd = new MySqlCommand(queryHorarios, conn))
-                    {
-                        cmd.Parameters.AddWithValue("@dia", diaSemanaMySql);
-                        using (var reader = cmd.ExecuteReader())
-                        {
-                            while (reader.Read()) { horarios.Add(new { IdMedico = reader.GetInt32(0), Entrada = reader.GetTimeSpan(1), Salida = reader.GetTimeSpan(2) }); }
-                        }
-                    }
+                    // ✨ 1. OBTENEMOS LOS HORARIOS REALES DE LOS DOCTORES PARA ESE DÍA
+                    // Sin importar si salen a las 8 PM o a las 11:45 PM
+                    string queryHorarios = "SELECT hora_Entrada, hora_Salida FROM HORARIOS WHERE id_Dia = @dia";
+                    List<Tuple<TimeSpan, TimeSpan>> rangosMedicos = new List<Tuple<TimeSpan, TimeSpan>>();
 
-                    // ✨ MAGIA AQUÍ: Le decimos que NO tome en cuenta la cita que estamos editando (!= @idCita)
-                    string queryCitas = "SELECT id_Medico, hora_Cita FROM CITAS WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada')) AND id_Cita != @idCita";
-                    var citas = new List<dynamic>();
-                    using (MySqlCommand cmd = new MySqlCommand(queryCitas, conn))
+                    using (MySqlCommand cmdHorarios = new MySqlCommand(queryHorarios, conn))
                     {
-                        cmd.Parameters.AddWithValue("@fecha", fecha);
-                        cmd.Parameters.AddWithValue("@idCita", idCita);
-                        using (var reader = cmd.ExecuteReader())
+                        cmdHorarios.Parameters.AddWithValue("@dia", diaSemana);
+                        using (MySqlDataReader reader = cmdHorarios.ExecuteReader())
                         {
-                            while (reader.Read()) { citas.Add(new { IdMedico = reader.GetInt32(0), HoraCita = reader.GetTimeSpan(1) }); }
-                        }
-                    }
-
-                    TimeSpan horaActual = new TimeSpan(8, 0, 0);
-                    TimeSpan horaFin = new TimeSpan(20, 0, 0);
-                    TimeSpan intervalo = new TimeSpan(0, 15, 0);
-
-                    while (horaActual <= horaFin)
-                    {
-                        bool hayMedicoDisponible = false;
-                        foreach (var h in horarios)
-                        {
-                            if (horaActual >= h.Entrada && horaActual < h.Salida)
+                            while (reader.Read())
                             {
-                                bool tieneCita = false;
-                                foreach (var c in citas) { if (c.IdMedico == h.IdMedico && c.HoraCita == horaActual) { tieneCita = true; break; } }
-                                if (!tieneCita) { hayMedicoDisponible = true; break; }
+                                rangosMedicos.Add(new Tuple<TimeSpan, TimeSpan>(reader.GetTimeSpan(0), reader.GetTimeSpan(1)));
                             }
                         }
-                        if (hayMedicoDisponible) horasDisponibles.Add(horaActual.ToString(@"hh\:mm"));
-                        horaActual = horaActual.Add(intervalo);
+                    }
+
+                    // Si ningún doctor trabaja ese día, devolvemos la lista vacía
+                    if (rangosMedicos.Count == 0) return Ok(horasGeneradas);
+
+                    // ✨ 2. GENERAMOS LOS BLOQUES DE 15 MINUTOS RESPETANDO LAS SALIDAS REALES
+                    foreach (var rango in rangosMedicos)
+                    {
+                        TimeSpan horaIteracion = rango.Item1; // Ejemplo: Inicia 15:00 (3:00 PM)
+
+                        // Mientras la hora actual + 15 mins no supere la hora de salida del doctor (Ej: 23:45)
+                        while (horaIteracion.Add(TimeSpan.FromMinutes(15)) <= rango.Item2)
+                        {
+                            string horaString = horaIteracion.ToString(@"hh\:mm");
+                            if (!horasGeneradas.Contains(horaString))
+                            {
+                                horasGeneradas.Add(horaString);
+                            }
+                            horaIteracion = horaIteracion.Add(TimeSpan.FromMinutes(15));
+                        }
+                    }
+
+                    // 3. ORDENAMOS LAS HORAS DE MENOR A MAYOR
+                    horasGeneradas.Sort();
+
+                    // 4. ELIMINAMOS LAS HORAS QUE YA ESTÁN OCUPADAS EN OTRAS CITAS
+                    string queryOcupadas = @"
+                        SELECT TIME_FORMAT(hora_Cita, '%H:%i') 
+                        FROM CITAS 
+                        WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))";
+
+                    if (idCita.HasValue && idCita.Value > 0)
+                    {
+                        queryOcupadas += " AND id_Cita != @idCita"; // Ignoramos la cita actual si estamos en CitasUpdate
+                    }
+
+                    using (MySqlCommand cmdOcupadas = new MySqlCommand(queryOcupadas, conn))
+                    {
+                        cmdOcupadas.Parameters.AddWithValue("@fecha", fechaSeleccionada.ToString("yyyy-MM-dd"));
+                        if (idCita.HasValue && idCita.Value > 0) cmdOcupadas.Parameters.AddWithValue("@idCita", idCita.Value);
+
+                        using (MySqlDataReader reader = cmdOcupadas.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                string horaOcupada = reader.GetString(0);
+                                horasGeneradas.Remove(horaOcupada); // La quitamos de la lista disponible
+                            }
+                        }
                     }
                 }
-                return Ok(horasDisponibles);
+
+                // 5. DEVOLVEMOS LA LISTA LIMPIA A VISUAL BASIC
+                return Ok(horasGeneradas);
             }
-            catch (Exception ex) { return StatusCode(500, new { error = "Error al calcular horas: " + ex.Message }); }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al calcular horas. Detalles: " + ex.Message });
+            }
         }
 
         // --- 4. OBTENER MÉDICO DISPONIBLE (AHORA IGNORA LA CITA ACTUAL) ---

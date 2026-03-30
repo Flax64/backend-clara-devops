@@ -1,6 +1,7 @@
 ﻿using backend_CLARA.Models;
 using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
+using System;
 using System.Collections.Generic;
 
 namespace backend_CLARA.Controllers
@@ -22,9 +23,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ¡La consulta SQL adaptada exactamente a tu diagrama!
-                    // 1. Actualiza el SELECT para pedir la hora y ordenar por ella también
-                    // 2. Agregamos e.nombre AS nombre_Estatus y el INNER JOIN
                     string query = @"SELECT v.id_Venta, v.fecha_Venta, v.hora_Venta, v.nombre_Cliente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Vendedor, 
                                     v.total_Venta, m.nombre AS metodo_Pago, e.nombre AS nombre_Estatus
                                     FROM VENTAS v
@@ -39,13 +37,10 @@ namespace backend_CLARA.Controllers
                         {
                             while (reader.Read())
                             {
-                                // Protegemos el código por si las ventas viejas tienen la hora vacía (NULL)
                                 string horaFormateada = "--:--";
                                 if (reader["hora_Venta"] != DBNull.Value)
                                 {
-                                    // MySQL devuelve el tipo TIME como un TimeSpan en C#
                                     TimeSpan tiempo = (TimeSpan)reader["hora_Venta"];
-                                    // Lo convertimos a una fecha temporal solo para sacarle el formato de 12 horas (AM/PM)
                                     horaFormateada = new DateTime(tiempo.Ticks).ToString("hh:mm tt");
                                 }
 
@@ -57,7 +52,7 @@ namespace backend_CLARA.Controllers
                                     Cliente = reader["nombre_Cliente"].ToString(),
                                     Vendedor = reader["nombre_Vendedor"].ToString(),
                                     Total = Convert.ToDecimal(reader["total_Venta"]),
-                                    Metodo = reader["metodo_Pago"].ToString(), 
+                                    Metodo = reader["metodo_Pago"].ToString(),
                                     Estatus = reader["nombre_Estatus"].ToString()
                                 });
                             }
@@ -71,6 +66,7 @@ namespace backend_CLARA.Controllers
                 return StatusCode(500, new { error = "Ocurrió un problema al cargar la lista de ventas. Detalles: " + ex.Message });
             }
         }
+
         // Ruta DELETE para eliminar una venta por su ID
         [HttpDelete("{id}")]
         public IActionResult EliminarVenta(int id)
@@ -84,7 +80,6 @@ namespace backend_CLARA.Controllers
                     {
                         try
                         {
-                            // ✨ VERIFICAR QUE NO ESTÉ YA CANCELADA
                             int estatusActual = 0;
                             using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM VENTAS WHERE id_Venta = @id", conn, transaccion))
                             {
@@ -94,7 +89,13 @@ namespace backend_CLARA.Controllers
                                 estatusActual = Convert.ToInt32(result);
                             }
 
-                            int idEstatusCancelada = 4; 
+                            // Obtenemos el ID de "Cancelada" dinámicamente
+                            int idEstatusCancelada = 0;
+                            using (var cmdCheckStatus = new MySqlCommand("SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Cancelada' LIMIT 1", conn, transaccion))
+                            {
+                                idEstatusCancelada = Convert.ToInt32(cmdCheckStatus.ExecuteScalar());
+                            }
+
                             if (estatusActual == idEstatusCancelada)
                                 return BadRequest(new { message = "Esta venta ya se encuentra cancelada." });
 
@@ -115,7 +116,7 @@ namespace backend_CLARA.Controllers
                                 cmdDevolver.ExecuteNonQuery();
                             }
 
-                            // 2. ✨ MAGIA: EN LUGAR DE BORRAR, ACTUALIZAMOS EL ESTATUS
+                            // 2. ACTUALIZAMOS EL ESTATUS A CANCELADA
                             string queryCancelarVenta = "UPDATE VENTAS SET id_Estatus = @estatus WHERE id_Venta = @id";
                             using (MySqlCommand cmdVenta = new MySqlCommand(queryCancelarVenta, conn, transaccion))
                             {
@@ -124,10 +125,10 @@ namespace backend_CLARA.Controllers
                                 cmdVenta.ExecuteNonQuery();
                             }
 
-                            // 3. Si tenía consulta, la regresamos a estado 5 (Pendiente)
+                            // ✨ 3. CORRECCIÓN: Si tenía consulta, la regresamos a estado "Activo" para poder volver a surtirla
                             if (idConsultaRevertir.HasValue)
                             {
-                                string queryRevConsulta = "UPDATE CONSULTAS SET id_Estatus = 5 WHERE id_Consulta = @idConsulta";
+                                string queryRevConsulta = "UPDATE CONSULTAS SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1) WHERE id_Consulta = @idConsulta";
                                 using (MySqlCommand cmdRev = new MySqlCommand(queryRevConsulta, conn, transaccion))
                                 {
                                     cmdRev.Parameters.AddWithValue("@idConsulta", idConsultaRevertir.Value);
@@ -160,21 +161,18 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Iniciar transacción (para que si falla el detalle, no se guarde la venta incompleta)
                     using (MySqlTransaction transaccion = conn.BeginTransaction())
                     {
                         try
                         {
                             // 1. Insertar la Venta principal
-                            // ¡Cambiamos el id_Estatus a 5 (Completada) y agregamos id_Consulta!
                             string queryVenta = @"INSERT INTO VENTAS (id_Estatus, id_Consulta, id_Metodo, id_Usuario, fecha_Venta, hora_Venta, total_Venta, nombre_Cliente) 
-                            VALUES (5, @idConsulta, @metodo, @usuario, CURDATE(), CURTIME(), @total, @cliente);
+                            VALUES ((SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Completada' LIMIT 1), @idConsulta, @metodo, @usuario, CURDATE(), CURTIME(), @total, @cliente);
                             SELECT LAST_INSERT_ID();";
 
                             int nuevoIdVenta = 0;
                             using (MySqlCommand cmdVenta = new MySqlCommand(queryVenta, conn, transaccion))
                             {
-                                // Si viene nulo, mandamos un DBNull a MySQL
                                 cmdVenta.Parameters.AddWithValue("@idConsulta", request.IdConsulta.HasValue ? request.IdConsulta.Value : (object)DBNull.Value);
                                 cmdVenta.Parameters.AddWithValue("@metodo", request.IdMetodoPago);
                                 cmdVenta.Parameters.AddWithValue("@usuario", request.IdUsuario);
@@ -184,15 +182,12 @@ namespace backend_CLARA.Controllers
                                 nuevoIdVenta = Convert.ToInt32(cmdVenta.ExecuteScalar());
                             }
 
-                            // 2. Insertar los detalles (el carrito) y descontar stock
+                            // 2. Insertar los detalles y descontar stock
                             string queryDetalle = "INSERT INTO DETALLE_VENTA (id_Venta, id_Medicamento, cantidad) VALUES (@idVenta, @idMed, @cant)";
-
-                            // ¡LA MAGIA DEL INVENTARIO!: Restamos de la tabla de medicamentos
                             string queryDescontarStock = "UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento - @cant WHERE id_Medicamento = @idMed";
 
                             foreach (var item in request.Detalles)
                             {
-                                // A) Insertamos el ticket
                                 using (MySqlCommand cmdDet = new MySqlCommand(queryDetalle, conn, transaccion))
                                 {
                                     cmdDet.Parameters.AddWithValue("@idVenta", nuevoIdVenta);
@@ -201,7 +196,6 @@ namespace backend_CLARA.Controllers
                                     cmdDet.ExecuteNonQuery();
                                 }
 
-                                // B) Descontamos del inventario general
                                 using (MySqlCommand cmdStock = new MySqlCommand(queryDescontarStock, conn, transaccion))
                                 {
                                     cmdStock.Parameters.AddWithValue("@cant", item.Cantidad);
@@ -209,22 +203,24 @@ namespace backend_CLARA.Controllers
                                     cmdStock.ExecuteNonQuery();
                                 }
                             }
+
+                            // 3. Cambiamos la consulta a 'Surtido'
                             if (request.IdConsulta.HasValue)
                             {
-                                string queryUpdateConsulta = "UPDATE CONSULTAS SET id_Estatus = 6 WHERE id_Consulta = @idConsulta";
+                                string queryUpdateConsulta = "UPDATE CONSULTAS SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Surtido' LIMIT 1) WHERE id_Consulta = @idConsulta";
                                 using (MySqlCommand cmdConsulta = new MySqlCommand(queryUpdateConsulta, conn, transaccion))
                                 {
                                     cmdConsulta.Parameters.AddWithValue("@idConsulta", request.IdConsulta.Value);
                                     cmdConsulta.ExecuteNonQuery();
                                 }
                             }
-                            // Si todo salió bien, guardamos definitivamente (Commit)
+
                             transaccion.Commit();
                             return Ok(new { message = "Venta registrada exitosamente.", idGenerado = nuevoIdVenta });
                         }
                         catch (Exception)
                         {
-                            transaccion.Rollback(); // Si hubo error, deshacemos todo para evitar basura en la BD
+                            transaccion.Rollback();
                             throw;
                         }
                     }
@@ -250,7 +246,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // A) Traer los datos principales de la venta
                     string queryVenta = "SELECT id_Venta, nombre_Cliente, id_Metodo FROM VENTAS WHERE id_Venta = @id";
                     using (MySqlCommand cmd = new MySqlCommand(queryVenta, conn))
                     {
@@ -270,8 +265,6 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // B) Traer los medicamentos de esa venta (El Carrito)
-                    // ¡NUEVO!: También pedimos la concentración aquí
                     string queryDetalle = @"SELECT dv.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, 
                     SUM(dv.cantidad) AS cantidad, m.precio_Medicamento FROM DETALLE_VENTA dv
                     INNER JOIN MEDICAMENTOS m ON dv.id_Medicamento = m.id_Medicamento
@@ -290,7 +283,8 @@ namespace backend_CLARA.Controllers
 
                                 if (readerDet["concentracion_Valor"] != DBNull.Value && readerDet["concentracion_Unidad"] != DBNull.Value)
                                 {
-                                    nombreMostrado = $"{nombreBase} ({readerDet["concentracion_Valor"]}{readerDet["concentracion_Unidad"]})";
+                                    decimal valorDecimal = Convert.ToDecimal(readerDet["concentracion_Valor"]);
+                                    nombreMostrado = $"{nombreBase} ({valorDecimal.ToString("0.##")}{readerDet["concentracion_Unidad"]})";
                                 }
 
                                 int cant = Convert.ToInt32(readerDet["cantidad"]);
@@ -299,7 +293,7 @@ namespace backend_CLARA.Controllers
                                 venta.Detalles.Add(new FilaCarritoDTO
                                 {
                                     IdProducto = Convert.ToInt32(readerDet["id_Medicamento"]),
-                                    Producto = nombreMostrado, // Mandamos el nombre concatenado al carrito de VB
+                                    Producto = nombreMostrado,
                                     Cant = cant,
                                     P_Unit = precio,
                                     Subtotal = cant * precio
@@ -331,7 +325,6 @@ namespace backend_CLARA.Controllers
                     {
                         try
                         {
-                            // A) Actualizamos los datos principales (Cliente, Total, Método)
                             string queryUpdate = "UPDATE VENTAS SET nombre_Cliente = @cliente, id_Metodo = @metodo, total_Venta = @total WHERE id_Venta = @id";
                             using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn, transaccion))
                             {
@@ -342,7 +335,6 @@ namespace backend_CLARA.Controllers
                                 cmd.ExecuteNonQuery();
                             }
 
-                            // B) ¡TRUCO!: Regresamos el stock viejo al inventario antes de borrar los detalles
                             string queryDevolverStock = "UPDATE MEDICAMENTOS m INNER JOIN DETALLE_VENTA dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
                             using (MySqlCommand cmdDevolver = new MySqlCommand(queryDevolverStock, conn, transaccion))
                             {
@@ -350,7 +342,6 @@ namespace backend_CLARA.Controllers
                                 cmdDevolver.ExecuteNonQuery();
                             }
 
-                            // C) AHORA SÍ: Borramos los detalles viejos de la BD
                             string queryBorrarDetalles = "DELETE FROM DETALLE_VENTA WHERE id_Venta = @id";
                             using (MySqlCommand cmdBorrar = new MySqlCommand(queryBorrarDetalles, conn, transaccion))
                             {
@@ -358,13 +349,11 @@ namespace backend_CLARA.Controllers
                                 cmdBorrar.ExecuteNonQuery();
                             }
 
-                            // D) Insertamos los nuevos detalles y descontamos el stock nuevo
                             string queryInsertarDetalle = "INSERT INTO DETALLE_VENTA (id_Venta, id_Medicamento, cantidad) VALUES (@idVenta, @idMed, @cant)";
                             string queryDescontarNuevoStock = "UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento - @cant WHERE id_Medicamento = @idMed";
 
                             foreach (var item in request.Detalles)
                             {
-                                // 1. Insertamos el nuevo ticket
                                 using (MySqlCommand cmdIn = new MySqlCommand(queryInsertarDetalle, conn, transaccion))
                                 {
                                     cmdIn.Parameters.AddWithValue("@idVenta", id);
@@ -373,16 +362,14 @@ namespace backend_CLARA.Controllers
                                     cmdIn.ExecuteNonQuery();
                                 }
 
-                                // 2. Descontamos lo nuevo del inventario
                                 using (MySqlCommand cmdStock = new MySqlCommand(queryDescontarNuevoStock, conn, transaccion))
                                 {
                                     cmdStock.Parameters.AddWithValue("@cant", item.Cantidad);
                                     cmdStock.Parameters.AddWithValue("@idMed", item.IdMedicamento);
                                     cmdStock.ExecuteNonQuery();
                                 }
-                            } // <--- AQUÍ TERMINA EL FOREACH
+                            }
 
-                            // E) ESTO VA AFUERA DEL FOREACH: Guardamos los cambios y respondemos
                             transaccion.Commit();
                             return Ok(new { message = "Venta actualizada correctamente." });
                         }
@@ -409,7 +396,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Traemos el ID y el Nombre de tu tabla METODOS_PAGO
                     string query = "SELECT id_Metodo, nombre FROM METODOS_PAGO";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -435,7 +421,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // Ruta GET para pedir el catálogo de medicamentos para el buscador
         [HttpGet("medicamentos")]
         public IActionResult ObtenerMedicamentosBuscador()
         {
@@ -458,11 +443,9 @@ namespace backend_CLARA.Controllers
 
                             if (reader["concentracion_Valor"] != DBNull.Value && reader["concentracion_Unidad"] != DBNull.Value)
                             {
-                                // TRUCO PARA QUITAR LOS CEROS: Convertimos a decimal y formateamos con "0.##"
                                 decimal valorDecimal = Convert.ToDecimal(reader["concentracion_Valor"]);
                                 string valorLimpio = valorDecimal.ToString("0.##");
                                 string unidad = reader["concentracion_Unidad"].ToString();
-
                                 nombreMostrado = $"{nombreBase} ({valorLimpio}{unidad})";
                             }
 
@@ -496,14 +479,14 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Unimos CONSULTAS -> CITAS -> PACIENTES -> USUARIOS para sacar el nombre real
+                    // ✨ CORRECCIÓN: Buscamos las consultas que están "Activas" (listas para cobrar)
                     string query = @"
                     SELECT c.id_Consulta, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Paciente 
                     FROM CONSULTAS c
                     INNER JOIN CITAS ci ON c.id_Cita = ci.id_Cita
                     INNER JOIN PACIENTES p ON ci.id_Paciente = p.id_Paciente
                     INNER JOIN USUARIOS u ON p.id_Usuario = u.id_Usuario
-                    WHERE c.id_Estatus = 5 
+                    WHERE c.id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1) 
                     AND ci.fecha_Cita >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
                     ORDER BY c.id_Consulta DESC LIMIT 50";
 
@@ -515,7 +498,6 @@ namespace backend_CLARA.Controllers
                             listaConsultas.Add(new
                             {
                                 IdConsulta = Convert.ToInt32(reader["id_Consulta"]),
-                                // Lo mostramos así: "Juan Perez "
                                 Nombre = reader["nombre_Paciente"].ToString()
                             });
                         }
@@ -532,9 +514,6 @@ namespace backend_CLARA.Controllers
         // =======================================================
         // GET: OBTENER LOS MEDICAMENTOS DE ESA RECETA
         // =======================================================
-        // =======================================================
-        // 2. GET: OBTENER LOS MEDICAMENTOS DE ESA RECETA (CORREGIDO)
-        // =======================================================
         [HttpGet("receta/{idConsulta}")]
         public IActionResult ObtenerReceta(int idConsulta)
         {
@@ -544,7 +523,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Ya no pedimos duración ni frecuencia para evitar que el programa choque con los textos
                     string query = @"
                 SELECT dr.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, 
                        m.precio_Medicamento, m.stock_Medicamento
@@ -559,7 +537,6 @@ namespace backend_CLARA.Controllers
                         {
                             while (reader.Read())
                             {
-                                // Formateamos el nombre (Ej. Paracetamol (500mg))
                                 string nombreMostrado = reader["nombre_Medicamento"].ToString();
                                 if (reader["concentracion_Valor"] != DBNull.Value && reader["concentracion_Unidad"] != DBNull.Value)
                                 {
@@ -573,7 +550,7 @@ namespace backend_CLARA.Controllers
                                     Nombre = nombreMostrado,
                                     Precio = Convert.ToDecimal(reader["precio_Medicamento"]),
                                     Stock = Convert.ToInt32(reader["stock_Medicamento"]),
-                                    Cantidad = 1 // <--- SOLUCIÓN: Siempre mandamos 1 caja por defecto
+                                    Cantidad = 1
                                 });
                             }
                         }
