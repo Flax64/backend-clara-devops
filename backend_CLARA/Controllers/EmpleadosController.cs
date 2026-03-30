@@ -68,7 +68,7 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 2. CREAR (CON VALIDACIÓN DE CORREO Y PACIENTE) ---
+        // --- 2. CREAR EMPLEADO ---
         [HttpPost]
         public IActionResult CrearEmpleado([FromBody] UsuarioRequest request)
         {
@@ -78,7 +78,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. VERIFICAMOS SI EL CORREO YA EXISTE Y QUÉ ROL TIENE
                     string checkQuery = @"
                         SELECT u.id_Usuario, r.nombre 
                         FROM USUARIOS u 
@@ -111,7 +110,9 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. SI EL CORREO NO EXISTE, LO INSERTAMOS NORMALMENTE
+                    // ✨ GENERAMOS EL HASH ANTES DE INSERTAR
+                    string hashPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
+
                     string query = @"INSERT INTO USUARIOS 
                         (id_Estatus, id_Genero, id_Rol, nombre_Usuario, apellido_P, apellido_M, email_Usuario, password_Usuario, telefono, fecha_Nacimiento) 
                         VALUES (@idEstatus, @idGenero, @idRol, @nombre, @apPaterno, @apMaterno, @email, @password, @telefono, @fechaNac)";
@@ -125,7 +126,7 @@ namespace backend_CLARA.Controllers
                         cmd.Parameters.AddWithValue("@apPaterno", request.ApellidoPaterno);
                         cmd.Parameters.AddWithValue("@apMaterno", string.IsNullOrEmpty(request.ApellidoMaterno) ? (object)DBNull.Value : request.ApellidoMaterno);
                         cmd.Parameters.AddWithValue("@email", request.Email);
-                        cmd.Parameters.AddWithValue("@password", request.Password);
+                        cmd.Parameters.AddWithValue("@password", hashPassword); // Se inserta el Hash
                         cmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         cmd.Parameters.AddWithValue("@fechaNac", request.FechaNacimiento);
                         cmd.ExecuteNonQuery();
@@ -163,7 +164,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. VALIDACIÓN DE CORREO
                     string checkEmailQuery = "SELECT COUNT(*) FROM USUARIOS WHERE email_Usuario = @email AND id_Usuario != @id";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkEmailQuery, conn))
                     {
@@ -175,12 +175,12 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. ACTUALIZAR DATOS PRINCIPALES
                     string queryUpdate = @"UPDATE USUARIOS SET 
                         id_Estatus = @idEstatus, id_Genero = @idGenero, id_Rol = @idRol, 
                         nombre_Usuario = @nombre, apellido_P = @apPaterno, apellido_M = @apMaterno, 
                         email_Usuario = @email, telefono = @telefono, fecha_Nacimiento = @fechaNac ";
 
+                    // Si escribieron nueva contraseña, la incluimos
                     if (!string.IsNullOrWhiteSpace(request.Password))
                     {
                         queryUpdate += ", password_Usuario = @password ";
@@ -201,15 +201,16 @@ namespace backend_CLARA.Controllers
                         cmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         cmd.Parameters.AddWithValue("@fechaNac", request.FechaNacimiento);
 
+                        // ✨ GENERAMOS EL HASH DE LA NUEVA CONTRASEÑA
                         if (!string.IsNullOrWhiteSpace(request.Password))
                         {
-                            cmd.Parameters.AddWithValue("@password", request.Password);
+                            string hashPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
+                            cmd.Parameters.AddWithValue("@password", hashPassword);
                         }
 
                         cmd.ExecuteNonQuery();
                     }
 
-                    // 3. LIMPIEZA DE PACIENTES
                     string queryBorrarPaciente = "DELETE FROM PACIENTES WHERE id_Usuario = @id";
                     using (MySqlCommand cmdBorrarPac = new MySqlCommand(queryBorrarPaciente, conn))
                     {
@@ -218,7 +219,6 @@ namespace backend_CLARA.Controllers
                         catch (MySqlException ex) { if (ex.Number != 1451) throw; }
                     }
 
-                    // ✨ 4. GESTIÓN DEL MÉDICO (Ascenso, actualización o remoción inteligente)
                     if (!string.IsNullOrWhiteSpace(request.CedulaProfesional) && !string.IsNullOrWhiteSpace(request.Especialidad))
                     {
                         string checkMedicoQuery = "SELECT COUNT(*) FROM MEDICOS WHERE id_Usuario = @id";
@@ -254,7 +254,6 @@ namespace backend_CLARA.Controllers
                     }
                     else
                     {
-                        // ✨ 4.4 AQUÍ OCURRE LA MAGIA: Si le cambiaron el rol y ya no es médico
                         int idMedicoTemp = 0;
                         using (var cmdBusca = new MySqlCommand("SELECT id_Medico FROM MEDICOS WHERE id_Usuario = @id", conn))
                         {
@@ -265,14 +264,12 @@ namespace backend_CLARA.Controllers
 
                         if (idMedicoTemp > 0)
                         {
-                            // A. Borramos todos sus horarios
                             using (var cmdDelHor = new MySqlCommand("DELETE FROM HORARIOS WHERE id_Medico = @idMed", conn))
                             {
                                 cmdDelHor.Parameters.AddWithValue("@idMed", idMedicoTemp);
                                 cmdDelHor.ExecuteNonQuery();
                             }
 
-                            // B. Cancelamos sus citas futuras/pendientes
                             string qCancelarCitas = @"
                                 UPDATE CITAS 
                                 SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Cancelada' LIMIT 1)
@@ -284,27 +281,17 @@ namespace backend_CLARA.Controllers
                                 cmdCancCitas.ExecuteNonQuery();
                             }
 
-                            // C. Intentamos borrar el registro de MEDICOS
                             string queryBorrarMedico = "DELETE FROM MEDICOS WHERE id_Usuario = @id";
                             using (MySqlCommand cmdDelMed = new MySqlCommand(queryBorrarMedico, conn))
                             {
                                 cmdDelMed.Parameters.AddWithValue("@id", id);
-                                try
-                                {
-                                    cmdDelMed.ExecuteNonQuery();
-                                }
-                                catch (MySqlException ex)
-                                {
-                                    // Si da error 1451 (Tiene citas pasadas completadas o consultas), lo tragamos en silencio.
-                                    // El usuario ya cambió de rol, por lo que no aparecerá en los combos de creación de citas,
-                                    // pero su ID de médico sobrevive para no corromper la base de datos histórica.
-                                    if (ex.Number != 1451) throw;
-                                }
+                                try { cmdDelMed.ExecuteNonQuery(); }
+                                catch (MySqlException ex) { if (ex.Number != 1451) throw; }
                             }
                         }
                     }
                 }
-                return Ok(new { message = "Empleado actualizado exitosamente. (Si se le removió el puesto de médico, sus horarios fueron borrados y citas futuras canceladas)." });
+                return Ok(new { message = "Empleado actualizado exitosamente." });
             }
             catch (Exception ex)
             {
@@ -312,7 +299,7 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 4. ELIMINAR EMPLEADO (BORRADO LÓGICO / DAR DE BAJA) ---
+        // --- 4. ELIMINAR EMPLEADO ---
         [HttpDelete("{id}")]
         public IActionResult EliminarEmpleado(int id)
         {
@@ -321,7 +308,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-
                     string queryBaja = @"
                         UPDATE USUARIOS 
                         SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Inactivo' LIMIT 1) 
@@ -333,13 +319,9 @@ namespace backend_CLARA.Controllers
                         int filasAfectadas = cmd.ExecuteNonQuery();
 
                         if (filasAfectadas > 0)
-                        {
                             return Ok(new { message = "Empleado dado de baja exitosamente." });
-                        }
                         else
-                        {
                             return NotFound(new { error = "No se encontró el empleado a dar de baja." });
-                        }
                     }
                 }
             }
@@ -349,7 +331,7 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- EXTRA: OBTENER CATÁLOGOS PARA LLENAR LOS COMBOBOX ---
+        // --- EXTRA: OBTENER CATÁLOGOS ---
         [HttpGet("catalogos")]
         public IActionResult GetCatalogos()
         {
@@ -364,48 +346,27 @@ namespace backend_CLARA.Controllers
                     using (var cmd = new MySqlCommand("SELECT id_Rol, nombre FROM ROLES WHERE nombre != 'Paciente'", conn))
                     using (var reader = cmd.ExecuteReader())
                     {
-                        while (reader.Read())
-                        {
-                            respuesta.Roles.Add(new CatalogoItem
-                            {
-                                Id = reader.GetInt32(0),
-                                Nombre = reader.GetString(1)
-                            });
-                        }
+                        while (reader.Read()) { respuesta.Roles.Add(new CatalogoItem { Id = reader.GetInt32(0), Nombre = reader.GetString(1) }); }
                     }
 
                     using (var cmd = new MySqlCommand("SELECT id_Genero, nombre FROM GENEROS", conn))
                     using (var reader = cmd.ExecuteReader())
                     {
-                        while (reader.Read())
-                        {
-                            respuesta.Generos.Add(new CatalogoItem
-                            {
-                                Id = reader.GetInt32(0),
-                                Nombre = reader.GetString(1)
-                            });
-                        }
+                        while (reader.Read()) { respuesta.Generos.Add(new CatalogoItem { Id = reader.GetInt32(0), Nombre = reader.GetString(1) }); }
                     }
 
                     string queryEstatus = "SELECT id_Estatus, nombre FROM ESTATUS WHERE nombre IN ('Activo', 'Inactivo')";
                     using (var cmd = new MySqlCommand(queryEstatus, conn))
                     using (var reader = cmd.ExecuteReader())
                     {
-                        while (reader.Read())
-                        {
-                            respuesta.Estatus.Add(new CatalogoItem
-                            {
-                                Id = reader.GetInt32(0),
-                                Nombre = reader.GetString(1)
-                            });
-                        }
+                        while (reader.Read()) { respuesta.Estatus.Add(new CatalogoItem { Id = reader.GetInt32(0), Nombre = reader.GetString(1) }); }
                     }
                 }
                 return Ok(respuesta);
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Error al obtener los catálogos del sistema. Detalles: " + ex.Message });
+                return StatusCode(500, new { error = "Error al obtener los catálogos. Detalles: " + ex.Message });
             }
         }
     }

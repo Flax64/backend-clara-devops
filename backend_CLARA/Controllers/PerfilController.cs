@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
 using Org.BouncyCastle.Asn1.Ocsp;
+using System;
 
 namespace backend_CLARA.Controllers
 {
@@ -10,6 +11,7 @@ namespace backend_CLARA.Controllers
     public class PerfilController : ControllerBase
     {
         private readonly String _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
+
         [HttpGet("{correo}")]
         public IActionResult ObtenerPerfil(string correo)
         {
@@ -66,7 +68,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // Acomodé el string con un salto de línea limpio para que no se vea todo amontonado
                     string query = @"
                 UPDATE USUARIOS 
                 SET nombre_Usuario = @nombre, 
@@ -79,16 +80,10 @@ namespace backend_CLARA.Controllers
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
-                        // Parámetro de la URL
                         cmd.Parameters.AddWithValue("@correo", correo);
-
-                        // ¡AQUÍ ESTÁN LOS PARÁMETROS QUE FALTABAN!
                         cmd.Parameters.AddWithValue("@nombre", request.Nombre);
                         cmd.Parameters.AddWithValue("@apellidoP", request.ApellidoP);
-
-                        // Si el apellido materno viene vacío, lo mandamos como nulo a la BD
                         cmd.Parameters.AddWithValue("@apellidoM", string.IsNullOrEmpty(request.ApellidoM) ? (object)DBNull.Value : request.ApellidoM);
-
                         cmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         cmd.Parameters.AddWithValue("@fechaNacimiento", request.FechaNacimiento);
                         cmd.Parameters.AddWithValue("@idGenero", request.IdGenero);
@@ -121,7 +116,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // PASO A: Extraer la contraseña actual de la BD usando BINARY para que respete mayúsculas
+                    // PASO A: Extraer la contraseña actual de la BD
                     string checkQuery = "SELECT password_Usuario FROM USUARIOS WHERE email_Usuario = @correo";
                     string passwordBD = "";
 
@@ -132,24 +127,34 @@ namespace backend_CLARA.Controllers
 
                         if (result == null)
                         {
-                            // Si el correo no existe en la BD
                             return NotFound(new { message = "Usuario no encontrado." });
                         }
-
                         passwordBD = result.ToString();
                     }
 
-                    // PASO B: Validar si la contraseña actual coincide
-                    if (passwordBD != request.PasswordActual)
+                    // PASO B: Validar si la contraseña actual coincide (HÍBRIDO)
+                    bool isValid = false;
+                    if (passwordBD.StartsWith("$2") && passwordBD.Length >= 59)
+                    {
+                        isValid = BCrypt.Net.BCrypt.Verify(request.PasswordActual, passwordBD);
+                    }
+                    else
+                    {
+                        isValid = (passwordBD == request.PasswordActual);
+                    }
+
+                    if (!isValid)
                     {
                         return BadRequest(new { message = "La contraseña actual es incorrecta. Intenta de nuevo." });
                     }
 
-                    // PASO C: Actualizar por la nueva contraseña
+                    // PASO C: Encriptar y guardar
+                    string newHash = BCrypt.Net.BCrypt.HashPassword(request.NuevaPassword);
+
                     string updateQuery = "UPDATE USUARIOS SET password_Usuario = @nuevaPassword WHERE email_Usuario = @correo";
                     using (MySqlCommand updateCmd = new MySqlCommand(updateQuery, conn))
                     {
-                        updateCmd.Parameters.AddWithValue("@nuevaPassword", request.NuevaPassword);
+                        updateCmd.Parameters.AddWithValue("@nuevaPassword", newHash);
                         updateCmd.Parameters.AddWithValue("@correo", correo);
 
                         int filas = updateCmd.ExecuteNonQuery();

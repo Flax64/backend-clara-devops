@@ -1,7 +1,6 @@
 ﻿using backend_CLARA.Models;
 using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
-using Org.BouncyCastle.Asn1.Ocsp;
 using System;
 using System.Collections.Generic;
 
@@ -22,7 +21,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. Primero verificamos si el correo ya existe para no duplicar
+                    // 1. Verificamos duplicidad
                     string checkQuery = "SELECT COUNT(*) FROM usuarios WHERE email_Usuario = @correo";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
                     {
@@ -35,7 +34,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. Extraemos el rol del usuario (por defecto dejare el de paciente
+                    // 2. Extraemos el rol de Paciente
                     string rolQuery = "SELECT id_Rol FROM roles WHERE nombre = 'Paciente'";
                     int idRol = 0;
                     if (request.IdRol == 0)
@@ -46,9 +45,12 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 3. Si no existe, procedemos a insertar el nuevo usuario
+                    // ✨ 3. GENERAMOS EL HASH ANTES DE INSERTAR
+                    string hashPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
+
                     string insertQuery = "INSERT INTO usuarios (id_Genero, id_Estatus,id_Rol, nombre_Usuario, apellido_P, apellido_M, email_Usuario, password_Usuario, telefono, fecha_Nacimiento) " +
                         "VALUES (@idGenero, @idEstatus, @idRol, @nombre, @apellidoP, @apellidoM, @correo, @password, @telefono, @fechaNacimiento)";
+
                     using (MySqlCommand insertCmd = new MySqlCommand(insertQuery, conn))
                     {
                         insertCmd.Parameters.AddWithValue("@idGenero", request.IdGenero);
@@ -58,7 +60,7 @@ namespace backend_CLARA.Controllers
                         insertCmd.Parameters.AddWithValue("@apellidoP", request.ApellidoPaterno);
                         insertCmd.Parameters.AddWithValue("@apellidoM", request.ApellidoMaterno);
                         insertCmd.Parameters.AddWithValue("@correo", request.Email);
-                        insertCmd.Parameters.AddWithValue("@password", request.Password);
+                        insertCmd.Parameters.AddWithValue("@password", hashPassword); // Insertamos el Hash
                         insertCmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         insertCmd.Parameters.AddWithValue("@fechaNacimiento", request.FechaNacimiento);
 

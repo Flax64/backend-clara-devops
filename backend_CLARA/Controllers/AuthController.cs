@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Net;
 using System.Net.Mail;
 using System.Text.RegularExpressions;
+// No necesitas agregar el "using BCrypt.Net" arriba, usaremos la ruta completa para evitar conflictos
 
 namespace backend_CLARA.Controllers
 {
@@ -19,7 +20,7 @@ namespace backend_CLARA.Controllers
         private static Dictionary<string, Models.EstadoRecuperacion> _memoriaTemporal = new Dictionary<string, Models.EstadoRecuperacion>();
 
         // ====================================================================
-        // LOGIN DE USUARIOS
+        // LOGIN DE USUARIOS (CON MIGRACIÓN HÍBRIDA SILENCIOSA)
         // ====================================================================
         [HttpPost("login")]
         public IActionResult Login([FromBody] LoginRequest request)
@@ -29,24 +30,67 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string Query = "SELECT COUNT(*) FROM usuarios WHERE BINARY email_Usuario = @correo AND BINARY password_Usuario = @password";
+
+                    int? idUsuario = null;
+                    string dbPassword = null;
+
+                    // ✨ 1. Extraemos los datos en lugar de solo contar
+                    string Query = "SELECT id_Usuario, password_Usuario FROM usuarios WHERE BINARY email_Usuario = @correo";
                     using (MySqlCommand cmd = new MySqlCommand(Query, conn))
                     {
                         cmd.Parameters.AddWithValue("@correo", request.Email);
-                        cmd.Parameters.AddWithValue("@password", request.Password);
-
-                        int count = Convert.ToInt32(cmd.ExecuteScalar());
-
-                        if (count > 0)
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
                         {
-                            return Ok(new { message = "AUTORIZADO" });
+                            if (reader.Read())
+                            {
+                                idUsuario = reader.GetInt32(0);
+                                dbPassword = reader.GetString(1);
+                            }
+                        }
+                    }
+
+                    // ✨ 2. Si el usuario existe, evaluamos la contraseña
+                    if (idUsuario != null && dbPassword != null)
+                    {
+                        bool isValid = false;
+                        bool needsUpgrade = false;
+
+                        // Detectar si ya es un Hash de BCrypt (Típicamente miden 60 chars y empiezan con $2)
+                        if (dbPassword.StartsWith("$2") && dbPassword.Length >= 59)
+                        {
+                            isValid = BCrypt.Net.BCrypt.Verify(request.Password, dbPassword);
                         }
                         else
                         {
-                            // ✨ ESTANDARIZADO: Devolvemos 'error' en lugar de 'message' para errores
-                            return Unauthorized(new { error = "Usuario o contraseña incorrectos." });
+                            // Si NO es un Hash, lo evaluamos como texto plano
+                            if (dbPassword == request.Password)
+                            {
+                                isValid = true;
+                                needsUpgrade = true; // Levantamos la bandera para migrarlo
+                            }
+                        }
+
+                        // ✨ 3. Si la contraseña (plana o hash) fue correcta, lo dejamos entrar
+                        if (isValid)
+                        {
+                            // Si entró con texto plano, la encriptamos de inmediato en la Base de Datos
+                            if (needsUpgrade)
+                            {
+                                string newHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
+                                string updateQuery = "UPDATE usuarios SET password_Usuario = @hash WHERE id_Usuario = @id";
+                                using (MySqlCommand cmdUpd = new MySqlCommand(updateQuery, conn))
+                                {
+                                    cmdUpd.Parameters.AddWithValue("@hash", newHash);
+                                    cmdUpd.Parameters.AddWithValue("@id", idUsuario.Value);
+                                    cmdUpd.ExecuteNonQuery();
+                                }
+                            }
+                            return Ok(new { message = "AUTORIZADO" });
                         }
                     }
+
+                    // Si no existe el usuario o la contraseña fue mala
+                    return Unauthorized(new { error = "Usuario o contraseña incorrectos." });
                 }
             }
             catch (Exception ex)
@@ -171,25 +215,37 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string queryPass = "SELECT COUNT(*) FROM usuarios WHERE password_Usuario = @password and email_Usuario = @correo";
-                    bool existePass = false;
+
+                    // Extraemos la contraseña actual de la BD para asegurarnos de que no esté reciclando su contraseña
+                    string queryPass = "SELECT password_Usuario FROM usuarios WHERE email_Usuario = @correo";
+                    string dbPass = "";
 
                     using (MySqlCommand cmd = new MySqlCommand(queryPass, conn))
                     {
-                        cmd.Parameters.AddWithValue("@password", request.NuevaPassword);
                         cmd.Parameters.AddWithValue("@correo", correoSeguro);
-                        existePass = Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+                        var result = cmd.ExecuteScalar();
+                        if (result != null) dbPass = result.ToString();
                     }
 
-                    if (existePass)
+                    // Hacemos validación híbrida por si estaba en texto plano o en hash
+                    bool isSame = false;
+                    if (dbPass.StartsWith("$2") && dbPass.Length >= 59)
+                        isSame = BCrypt.Net.BCrypt.Verify(request.NuevaPassword, dbPass);
+                    else
+                        isSame = (dbPass == request.NuevaPassword);
+
+                    if (isSame)
                     {
                         return BadRequest(new { error = "La nueva contraseña no puede ser igual a la anterior." });
                     }
 
+                    // ✨ ENCRIPTAMOS ANTES DE ACTUALIZAR
+                    string newHash = BCrypt.Net.BCrypt.HashPassword(request.NuevaPassword);
+
                     string queryUpdate = "UPDATE usuarios SET password_Usuario = @newpass WHERE email_Usuario = @correo";
                     using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn))
                     {
-                        cmd.Parameters.AddWithValue("@newpass", request.NuevaPassword);
+                        cmd.Parameters.AddWithValue("@newpass", newHash);
                         cmd.Parameters.AddWithValue("@correo", correoSeguro);
                         cmd.ExecuteNonQuery();
                     }
@@ -205,7 +261,7 @@ namespace backend_CLARA.Controllers
         }
 
         // ====================================================================
-        // MÉTODO AUXILIAR PARA CORREOS (Se queda igual)
+        // MÉTODO AUXILIAR PARA CORREOS 
         // ====================================================================
         private void EnviarCorreoMagico(string destinatario, string token)
         {
