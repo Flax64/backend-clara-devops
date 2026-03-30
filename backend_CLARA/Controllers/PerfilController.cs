@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
 using Org.BouncyCastle.Asn1.Ocsp;
 using System;
+using System.Collections.Generic;
 
 namespace backend_CLARA.Controllers
 {
@@ -69,7 +70,7 @@ namespace backend_CLARA.Controllers
                     conn.Open();
 
                     string query = @"
-                UPDATE USUARIOS 
+                UPDATE usuarios 
                 SET nombre_Usuario = @nombre, 
                     apellido_P = @apellidoP, 
                     apellido_M = @apellidoM, 
@@ -117,7 +118,7 @@ namespace backend_CLARA.Controllers
                     conn.Open();
 
                     // PASO A: Extraer la contraseña actual de la BD
-                    string checkQuery = "SELECT password_Usuario FROM USUARIOS WHERE email_Usuario = @correo";
+                    string checkQuery = "SELECT password_Usuario FROM usuarios WHERE email_Usuario = @correo";
                     string passwordBD = "";
 
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
@@ -151,7 +152,7 @@ namespace backend_CLARA.Controllers
                     // PASO C: Encriptar y guardar
                     string newHash = BCrypt.Net.BCrypt.HashPassword(request.NuevaPassword);
 
-                    string updateQuery = "UPDATE USUARIOS SET password_Usuario = @nuevaPassword WHERE email_Usuario = @correo";
+                    string updateQuery = "UPDATE usuarios SET password_Usuario = @nuevaPassword WHERE email_Usuario = @correo";
                     using (MySqlCommand updateCmd = new MySqlCommand(updateQuery, conn))
                     {
                         updateCmd.Parameters.AddWithValue("@nuevaPassword", newHash);
@@ -192,8 +193,8 @@ namespace backend_CLARA.Controllers
 
                     // ✨ 1. Obtenemos el Rol y el Nombre del usuario al mismo tiempo
                     string queryRol = @"SELECT r.nombre, u.nombre_Usuario, u.apellido_P 
-                                        FROM USUARIOS u 
-                                        INNER JOIN ROLES r ON u.id_Rol = r.id_Rol 
+                                        FROM usuarios u 
+                                        INNER JOIN roles r ON u.id_Rol = r.id_Rol 
                                         WHERE u.email_Usuario = @correo LIMIT 1";
 
                     using (MySqlCommand cmd = new MySqlCommand(queryRol, conn))
@@ -204,7 +205,12 @@ namespace backend_CLARA.Controllers
                             if (reader.Read())
                             {
                                 rolName = reader.GetString(0);
-                                nombreCompleto = $"{reader.GetString(1)} {reader.GetString(2)}";
+
+                                string nombreBD = reader.GetString(1).Trim();
+                                string primerNombre = nombreBD.Split(' ')[0];
+                                string apellidoPaterno = reader.GetString(2).Trim();
+
+                                nombreCompleto = $"{primerNombre} {apellidoPaterno}";
                             }
                         }
                     }
@@ -212,9 +218,9 @@ namespace backend_CLARA.Controllers
                     if (string.IsNullOrEmpty(rolName)) return NotFound(new { error = "Usuario no encontrado" });
 
                     // 2. Obtener la lista de Permisos dinámicos
-                    string queryPermisos = @"SELECT p.nombre FROM USUARIOS u 
-                                             INNER JOIN PERMISOS_has_ROLES phr ON u.id_Rol = phr.id_Rol 
-                                             INNER JOIN PERMISOS p ON phr.id_Permiso = p.id_Permiso 
+                    string queryPermisos = @"SELECT p.nombre FROM usuarios u 
+                                             INNER JOIN permisos_has_roles phr ON u.id_Rol = phr.id_Rol 
+                                             INNER JOIN permisos p ON phr.id_Permiso = p.id_Permiso 
                                              WHERE u.email_Usuario = @correo";
 
                     using (MySqlCommand cmdP = new MySqlCommand(queryPermisos, conn))

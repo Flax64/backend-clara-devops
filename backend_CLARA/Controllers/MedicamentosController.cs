@@ -28,8 +28,8 @@ namespace backend_CLARA.Controllers
                             m.nombre_Medicamento, m.descripcion_Medicamento, 
                             m.precio_Medicamento, m.stock_Medicamento, 
                             m.concentracion_Valor, m.concentracion_Unidad
-                        FROM MEDICAMENTOS m
-                        INNER JOIN ESTATUS e ON m.id_Estatus = e.id_Estatus";
+                        FROM medicamentos m
+                        INNER JOIN estatus e ON m.id_Estatus = e.id_Estatus";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
@@ -80,8 +80,8 @@ namespace backend_CLARA.Controllers
                     // ✨ VALIDACIÓN BLINDADA: Ignora espacios extras y diferencias entre mayúsculas/minúsculas
                     string checkQuery = @"
                         SELECT m.id_Medicamento, e.nombre AS estatusNombre 
-                        FROM MEDICAMENTOS m
-                        INNER JOIN ESTATUS e ON m.id_Estatus = e.id_Estatus
+                        FROM medicamentos m
+                        INNER JOIN estatus e ON m.id_Estatus = e.id_Estatus
                         WHERE TRIM(LOWER(m.nombre_Medicamento)) = TRIM(LOWER(@nombre)) 
                         AND m.concentracion_Valor = @valor 
                         AND TRIM(LOWER(m.concentracion_Unidad)) = TRIM(LOWER(@unidad))";
@@ -109,8 +109,8 @@ namespace backend_CLARA.Controllers
                                 reader.Close();
 
                                 string reactivarQuery = @"
-                                    UPDATE MEDICAMENTOS SET 
-                                    id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1),
+                                    UPDATE medicamentos SET 
+                                    id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1),
                                     descripcion_Medicamento = @desc,
                                     precio_Medicamento = @precio
                                     WHERE id_Medicamento = @id";
@@ -130,9 +130,9 @@ namespace backend_CLARA.Controllers
 
                     // 2. SI NO EXISTE EN ABSOLUTO, LO CREAMOS NUEVO (Forzando stock a 0 y limpiando textos)
                     string insertQuery = @"
-                        INSERT INTO MEDICAMENTOS 
+                        INSERT INTO medicamentos 
                         (id_Estatus, nombre_Medicamento, descripcion_Medicamento, precio_Medicamento, stock_Medicamento, concentracion_Valor, concentracion_Unidad) 
-                        VALUES ((SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1), @nombre, @desc, @precio, 0, @valor, @unidad)";
+                        VALUES ((SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1), @nombre, @desc, @precio, 0, @valor, @unidad)";
 
                     using (MySqlCommand insertCmd = new MySqlCommand(insertQuery, conn))
                     {
@@ -166,7 +166,7 @@ namespace backend_CLARA.Controllers
 
                     // ✨ VALIDACIÓN BLINDADA: Ignora espacios en blanco extras y mayúsculas/minúsculas
                     string checkQuery = @"
-                        SELECT COUNT(*) FROM MEDICAMENTOS 
+                        SELECT COUNT(*) FROM medicamentos 
                         WHERE TRIM(LOWER(nombre_Medicamento)) = TRIM(LOWER(@nombre)) 
                         AND concentracion_Valor = @valor 
                         AND TRIM(LOWER(concentracion_Unidad)) = TRIM(LOWER(@unidad)) 
@@ -187,7 +187,7 @@ namespace backend_CLARA.Controllers
 
                     // 2. ACTUALIZAR (Ignoramos el stock)
                     string query = @"
-                        UPDATE MEDICAMENTOS SET 
+                        UPDATE medicamentos SET 
                         id_Estatus = @idEstatus, 
                         nombre_Medicamento = @nombre, 
                         descripcion_Medicamento = @desc, 
@@ -228,8 +228,8 @@ namespace backend_CLARA.Controllers
                     conn.Open();
 
                     string queryBaja = @"
-                        UPDATE MEDICAMENTOS 
-                        SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Inactivo' LIMIT 1) 
+                        UPDATE medicamentos 
+                        SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Inactivo' LIMIT 1) 
                         WHERE id_Medicamento = @id";
 
                     using (MySqlCommand cmd = new MySqlCommand(queryBaja, conn))
@@ -257,7 +257,7 @@ namespace backend_CLARA.Controllers
         // --- MÉTODO AUXILIAR ---
         private int ObtenerIdEstatusActivo(MySqlConnection conn)
         {
-            string query = "SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1";
+            string query = "SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1";
             using (MySqlCommand cmd = new MySqlCommand(query, conn))
             {
                 var result = cmd.ExecuteScalar();

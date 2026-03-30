@@ -12,7 +12,6 @@ namespace backend_CLARA.Controllers
     {
         private readonly string _connectionString = ConexionDB.Cadena;
 
-        // --- 1. LEER TODAS LAS CITAS (CON FILTRO DE SEGURIDAD POR ROL) ---
         [HttpGet]
         public IActionResult GetCitas([FromQuery] string correo)
         {
@@ -26,12 +25,11 @@ namespace backend_CLARA.Controllers
                     string rolUsuario = "";
                     int idUsuarioLogeado = 0;
 
-                    // 1. Buscamos qué rol tiene el correo
                     if (!string.IsNullOrEmpty(correo))
                     {
                         string rolQuery = @"SELECT r.nombre, u.id_Usuario 
-                                            FROM USUARIOS u 
-                                            INNER JOIN ROLES r ON u.id_Rol = r.id_Rol 
+                                            FROM usuarios u 
+                                            INNER JOIN roles r ON u.id_Rol = r.id_Rol 
                                             WHERE u.email_Usuario = @correo LIMIT 1";
                         using (MySqlCommand cmdRol = new MySqlCommand(rolQuery, conn))
                         {
@@ -47,7 +45,6 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. Armamos la consulta base
                     string query = @"
                         SELECT 
                             c.id_Cita, 
@@ -56,33 +53,27 @@ namespace backend_CLARA.Controllers
                             DATE_FORMAT(c.fecha_Cita, '%d/%m/%Y') AS Fecha,
                             TIME_FORMAT(c.hora_Cita, '%h:%i %p') AS Hora,
                             e.nombre AS Estado
-                        FROM CITAS c
-                        INNER JOIN ESTATUS e ON c.id_Estatus = e.id_Estatus
-                        INNER JOIN PACIENTES p ON c.id_Paciente = p.id_Paciente
-                        INNER JOIN USUARIOS up ON p.id_Usuario = up.id_Usuario
-                        INNER JOIN MEDICOS m ON c.id_Medico = m.id_Medico
-                        INNER JOIN USUARIOS um ON m.id_Usuario = um.id_Usuario
+                        FROM citas c
+                        INNER JOIN estatus e ON c.id_Estatus = e.id_Estatus
+                        INNER JOIN pacientes p ON c.id_Paciente = p.id_Paciente
+                        INNER JOIN usuarios up ON p.id_Usuario = up.id_Usuario
+                        INNER JOIN medicos m ON c.id_Medico = m.id_Medico
+                        INNER JOIN usuarios um ON m.id_Usuario = um.id_Usuario
                         WHERE 1=1 ";
 
-                    // ✨ REGLAS DE SEGURIDAD INTELIGENTES
                     if (rolUsuario == "Paciente")
                     {
-                        // Si es paciente, solo ve las citas donde él es el paciente
                         query += " AND up.id_Usuario = @idUsuarioLogeado ";
                     }
                     else if (rolUsuario == "Médico" || rolUsuario == "Medico")
                     {
-                        // Si es médico, solo ve las citas donde él es el doctor asignado
                         query += " AND um.id_Usuario = @idUsuarioLogeado ";
                     }
-                    // Si es cualquier otro rol (Administrador, Recepcionista, Cajero, etc.), 
-                    // no entra a ningún IF y la query se queda como "WHERE 1=1", devolviendo TODO.
 
                     query += " ORDER BY c.fecha_Cita DESC, c.hora_Cita DESC";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
-                        // Pasamos el parámetro solo si se activó algún filtro
                         if (rolUsuario == "Paciente" || rolUsuario == "Médico" || rolUsuario == "Medico")
                         {
                             cmd.Parameters.AddWithValue("@idUsuarioLogeado", idUsuarioLogeado);
@@ -113,7 +104,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 2. CREAR CITA ---
         [HttpPost]
         public IActionResult CrearCita([FromBody] CitaRequest request)
         {
@@ -143,7 +133,7 @@ namespace backend_CLARA.Controllers
 
                     int idPendiente = ObtenerIdEstatus(conn, "Pendiente");
 
-                    string query = "INSERT INTO CITAS (id_Estatus, id_Paciente, id_Medico, fecha_Cita, hora_Cita) VALUES (@estatus, @paciente, @medico, @fecha, @hora)";
+                    string query = "INSERT INTO citas (id_Estatus, id_Paciente, id_Medico, fecha_Cita, hora_Cita) VALUES (@estatus, @paciente, @medico, @fecha, @hora)";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@estatus", idPendiente);
@@ -162,7 +152,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 3. ACTUALIZAR CITA ---
         [HttpPut("{id}")]
         public IActionResult ActualizarCita(int id, [FromBody] CitaRequest request)
         {
@@ -181,7 +170,7 @@ namespace backend_CLARA.Controllers
                     conn.Open();
 
                     int estatusActualId = 0;
-                    string getEstatusQuery = "SELECT id_Estatus FROM CITAS WHERE id_Cita = @id";
+                    string getEstatusQuery = "SELECT id_Estatus FROM citas WHERE id_Cita = @id";
                     using (MySqlCommand cmd = new MySqlCommand(getEstatusQuery, conn))
                     {
                         cmd.Parameters.AddWithValue("@id", id);
@@ -204,7 +193,7 @@ namespace backend_CLARA.Controllers
                         return BadRequest(new { error = errorDisponibilidad });
                     }
 
-                    string updateQuery = "UPDATE CITAS SET id_Paciente = @paciente, id_Medico = @medico, fecha_Cita = @fecha, hora_Cita = @hora, id_Estatus = @estatus WHERE id_Cita = @id";
+                    string updateQuery = "UPDATE citas SET id_Paciente = @paciente, id_Medico = @medico, fecha_Cita = @fecha, hora_Cita = @hora, id_Estatus = @estatus WHERE id_Cita = @id";
                     using (MySqlCommand cmd = new MySqlCommand(updateQuery, conn))
                     {
                         cmd.Parameters.AddWithValue("@id", id);
@@ -224,7 +213,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 4. ELIMINAR (CANCELAR) CITA ---
         [HttpDelete("{id}")]
         public IActionResult CancelarCita(int id)
         {
@@ -235,7 +223,7 @@ namespace backend_CLARA.Controllers
                     conn.Open();
                     int idCancelada = ObtenerIdEstatus(conn, "Cancelada");
 
-                    string cancelQuery = "UPDATE CITAS SET id_Estatus = @estatus WHERE id_Cita = @id";
+                    string cancelQuery = "UPDATE citas SET id_Estatus = @estatus WHERE id_Cita = @id";
                     using (MySqlCommand cmd = new MySqlCommand(cancelQuery, conn))
                     {
                         cmd.Parameters.AddWithValue("@estatus", idCancelada);
@@ -255,7 +243,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 5. CONFIRMAR CITA (ACCIÓN RÁPIDA) ---
         [HttpPut("confirmar/{id}")]
         public IActionResult ConfirmarCita(int id)
         {
@@ -266,7 +253,7 @@ namespace backend_CLARA.Controllers
                     conn.Open();
                     int idConfirmada = ObtenerIdEstatus(conn, "Confirmada");
 
-                    string query = "UPDATE CITAS SET id_Estatus = @estatus WHERE id_Cita = @id";
+                    string query = "UPDATE citas SET id_Estatus = @estatus WHERE id_Cita = @id";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@estatus", idConfirmada);
@@ -286,13 +273,9 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // ==========================================
-        // MÉTODOS AUXILIARES PRIVADOS
-        // ==========================================
-
         private int ObtenerIdEstatus(MySqlConnection conn, string nombreEstatus)
         {
-            using (MySqlCommand cmd = new MySqlCommand("SELECT id_Estatus FROM ESTATUS WHERE nombre = @nombre LIMIT 1", conn))
+            using (MySqlCommand cmd = new MySqlCommand("SELECT id_Estatus FROM estatus WHERE nombre = @nombre LIMIT 1", conn))
             {
                 cmd.Parameters.AddWithValue("@nombre", nombreEstatus);
                 return Convert.ToInt32(cmd.ExecuteScalar());
@@ -305,8 +288,8 @@ namespace backend_CLARA.Controllers
             int diaSemanaMySql = (int)fechaParsed.DayOfWeek + 1;
 
             string horarioQuery = @"
-                SELECT COUNT(*) FROM HORARIOS h
-                INNER JOIN DIAS d ON h.id_Dia = d.id_Dia
+                SELECT COUNT(*) FROM horarios h
+                INNER JOIN dias d ON h.id_Dia = d.id_Dia
                 WHERE h.id_Medico = @medico 
                 AND h.id_Dia = @dia
                 AND @hora >= h.hora_Entrada 
@@ -325,12 +308,12 @@ namespace backend_CLARA.Controllers
             }
 
             string choqueQuery = @"
-                SELECT COUNT(*) FROM CITAS 
+                SELECT COUNT(*) FROM citas 
                 WHERE id_Medico = @medico 
                 AND fecha_Cita = @fecha 
                 AND hora_Cita = @hora 
                 AND id_Cita != @idCita
-                AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))";
+                AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada'))";
 
             using (MySqlCommand cmd = new MySqlCommand(choqueQuery, conn))
             {
@@ -348,11 +331,6 @@ namespace backend_CLARA.Controllers
             return null;
         }
 
-        // ==========================================
-        // ✨ NUEVOS ENDPOINTS INTELIGENTES
-        // ==========================================
-
-        // --- 1. OBTENER UNA CITA ESPECÍFICA (PARA EL UPDATE) ---
         [HttpGet("{id}")]
         public IActionResult GetCitaById(int id)
         {
@@ -367,10 +345,10 @@ namespace backend_CLARA.Controllers
                                TIME_FORMAT(c.hora_Cita, '%H:%i:%s') as Hora, 
                                e.nombre as Estado,
                                CONCAT('Dr. ', um.nombre_Usuario, ' ', um.apellido_P) AS MedicoNombre
-                        FROM CITAS c
-                        INNER JOIN ESTATUS e ON c.id_Estatus = e.id_Estatus
-                        INNER JOIN MEDICOS m ON c.id_Medico = m.id_Medico
-                        INNER JOIN USUARIOS um ON m.id_Usuario = um.id_Usuario
+                        FROM citas c
+                        INNER JOIN estatus e ON c.id_Estatus = e.id_Estatus
+                        INNER JOIN medicos m ON c.id_Medico = m.id_Medico
+                        INNER JOIN usuarios um ON m.id_Usuario = um.id_Usuario
                         WHERE c.id_Cita = @id";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -402,7 +380,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 2. OBTENER PACIENTES (FILTRA POR ROL) ---
         [HttpGet("pacientes")]
         public IActionResult GetPacientesCombo([FromQuery] string correo)
         {
@@ -417,7 +394,7 @@ namespace backend_CLARA.Controllers
 
                     if (!string.IsNullOrEmpty(correo))
                     {
-                        string rolQuery = @"SELECT r.nombre, u.id_Usuario FROM USUARIOS u INNER JOIN ROLES r ON u.id_Rol = r.id_Rol WHERE u.email_Usuario = @correo LIMIT 1";
+                        string rolQuery = @"SELECT r.nombre, u.id_Usuario FROM usuarios u INNER JOIN roles r ON u.id_Rol = r.id_Rol WHERE u.email_Usuario = @correo LIMIT 1";
                         using (MySqlCommand cmdRol = new MySqlCommand(rolQuery, conn))
                         {
                             cmdRol.Parameters.AddWithValue("@correo", correo);
@@ -428,7 +405,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    string query = @"SELECT p.id_Paciente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P, ' ', IFNULL(u.apellido_M, '')) AS Nombre FROM PACIENTES p INNER JOIN USUARIOS u ON p.id_Usuario = u.id_Usuario WHERE u.id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1)";
+                    string query = @"SELECT p.id_Paciente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P, ' ', IFNULL(u.apellido_M, '')) AS Nombre FROM pacientes p INNER JOIN usuarios u ON p.id_Usuario = u.id_Usuario WHERE u.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1)";
                     if (rolUsuario == "Paciente") query += " AND p.id_Usuario = @idUsuario";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -445,7 +422,6 @@ namespace backend_CLARA.Controllers
             catch (Exception ex) { return StatusCode(500, new { error = "Error al obtener pacientes: " + ex.Message }); }
         }
 
-        // --- 3. OBTENER HORAS DISPONIBLES ---
         [HttpGet("horas-disponibles")]
         public IActionResult GetHorasDisponibles([FromQuery] string fecha, [FromQuery] int? idCita = null)
         {
@@ -460,7 +436,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    string queryHorarios = "SELECT hora_Entrada, hora_Salida FROM HORARIOS WHERE id_Dia = @dia";
+                    string queryHorarios = "SELECT hora_Entrada, hora_Salida FROM horarios WHERE id_Dia = @dia";
                     List<Tuple<TimeSpan, TimeSpan>> rangosMedicos = new List<Tuple<TimeSpan, TimeSpan>>();
 
                     using (MySqlCommand cmdHorarios = new MySqlCommand(queryHorarios, conn))
@@ -496,8 +472,8 @@ namespace backend_CLARA.Controllers
 
                     string queryOcupadas = @"
                         SELECT TIME_FORMAT(hora_Cita, '%H:%i') 
-                        FROM CITAS 
-                        WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))";
+                        FROM citas 
+                        WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada'))";
 
                     if (idCita.HasValue && idCita.Value > 0)
                     {
@@ -528,7 +504,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 4. OBTENER MÉDICO DISPONIBLE ---
         [HttpGet("medico-disponible")]
         public IActionResult GetMedicoDisponible([FromQuery] string fecha, [FromQuery] string hora, [FromQuery] int idCita = 0)
         {
@@ -542,16 +517,16 @@ namespace backend_CLARA.Controllers
 
                     string query = @"
                         SELECT m.id_Medico, CONCAT('Dr. ', u.nombre_Usuario, ' ', u.apellido_P) AS Nombre
-                        FROM MEDICOS m
-                        INNER JOIN USUARIOS u ON m.id_Usuario = u.id_Usuario
-                        INNER JOIN HORARIOS h ON m.id_Medico = h.id_Medico
+                        FROM medicos m
+                        INNER JOIN usuarios u ON m.id_Usuario = u.id_Usuario
+                        INNER JOIN horarios h ON m.id_Medico = h.id_Medico
                         WHERE h.id_Dia = @dia
                           AND @hora >= h.hora_Entrada AND @hora < h.hora_Salida
-                          AND u.id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1)
+                          AND u.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1)
                           AND m.id_Medico NOT IN (
-                              SELECT id_Medico FROM CITAS 
+                              SELECT id_Medico FROM citas 
                               WHERE fecha_Cita = @fecha AND hora_Cita = @hora AND id_Cita != @idCita
-                              AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))
+                              AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada'))
                           )
                         LIMIT 1";
 
@@ -573,7 +548,6 @@ namespace backend_CLARA.Controllers
             catch (Exception ex) { return StatusCode(500, new { error = "Error al buscar médico: " + ex.Message }); }
         }
 
-        // --- NUEVO: DETECTOR DE CITAS HUÉRFANAS ---
         [HttpGet("validar-huerfanas")]
         public IActionResult ValidarCitasHuerfanas()
         {
@@ -587,13 +561,13 @@ namespace backend_CLARA.Controllers
                     string query = @"
                         SELECT c.id_Cita, CONCAT(up.nombre_Usuario, ' ', up.apellido_P) AS Paciente, 
                                TIME_FORMAT(c.hora_Cita, '%h:%i %p') AS Hora, e.nombre AS Estado
-                        FROM CITAS c
-                        INNER JOIN ESTATUS e ON c.id_Estatus = e.id_Estatus
-                        INNER JOIN PACIENTES p ON c.id_Paciente = p.id_Paciente
-                        INNER JOIN USUARIOS up ON p.id_Usuario = up.id_Usuario
+                        FROM citas c
+                        INNER JOIN estatus e ON c.id_Estatus = e.id_Estatus
+                        INNER JOIN pacientes p ON c.id_Paciente = p.id_Paciente
+                        INNER JOIN usuarios up ON p.id_Usuario = up.id_Usuario
                         WHERE e.nombre IN ('Pendiente', 'Confirmada')
                         AND NOT EXISTS (
-                            SELECT 1 FROM HORARIOS h
+                            SELECT 1 FROM horarios h
                             WHERE h.id_Medico = c.id_Medico
                             AND h.id_Dia = DAYOFWEEK(c.fecha_Cita)
                             AND c.hora_Cita >= h.hora_Entrada
@@ -622,7 +596,7 @@ namespace backend_CLARA.Controllers
 
                         if (cita.Estado == "Confirmada")
                         {
-                            string qUpdate = "UPDATE CITAS SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Pendiente') WHERE id_Cita = @id";
+                            string qUpdate = "UPDATE citas SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Pendiente') WHERE id_Cita = @id";
                             using (MySqlCommand cmdUpd = new MySqlCommand(qUpdate, conn))
                             {
                                 cmdUpd.Parameters.AddWithValue("@id", cita.IdCita);

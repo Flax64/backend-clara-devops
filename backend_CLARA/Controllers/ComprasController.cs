@@ -13,9 +13,6 @@ namespace backend_CLARA.Controllers
     {
         private readonly string _connectionString = ConexionDB.Cadena;
 
-        // =======================================================
-        // 1. GET: LISTADO GENERAL (Para la tabla principal)
-        // =======================================================
         [HttpGet("lista")]
         public IActionResult ObtenerLista()
         {
@@ -25,12 +22,11 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ✅ Corregido: Agregado c.id_Proveedor y alias para estatus
                     string query = @"SELECT c.id_Compra, c.id_Proveedor, p.nombre_Proveedor, 
                                             c.fecha_Compra, c.hora_Compra, c.total_Compra, e.nombre AS nombre_Estatus 
-                                     FROM COMPRAS c 
-                                     INNER JOIN PROVEEDORES p ON c.id_Proveedor = p.id_Proveedor
-                                     INNER JOIN ESTATUS e ON c.id_Estatus = e.id_Estatus
+                                     FROM compras c 
+                                     INNER JOIN proveedores p ON c.id_Proveedor = p.id_Proveedor
+                                     INNER JOIN estatus e ON c.id_Estatus = e.id_Estatus
                                      ORDER BY c.id_Compra DESC";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -38,9 +34,6 @@ namespace backend_CLARA.Controllers
                     {
                         while (r.Read())
                         {
-                            // 1. Extraemos la hora de MySQL (TimeSpan)
-                            // 2. La convertimos a formato 12 horas (hh:mm tt)
-                            // 3. Reemplazamos "am/pm" por "a. m./p. m." para que luzca perfecto
                             TimeSpan ts = (TimeSpan)r["hora_Compra"];
                             string horaFormateada = DateTime.Today.Add(ts)
                                                     .ToString("hh:mm tt", System.Globalization.CultureInfo.InvariantCulture)
@@ -52,7 +45,7 @@ namespace backend_CLARA.Controllers
                                 idCompra = r["id_Compra"],
                                 idProveedor = r["id_Proveedor"],
                                 proveedor = r["nombre_Proveedor"],
-                                fecha = r["fecha_Compra"], 
+                                fecha = r["fecha_Compra"],
                                 hora = horaFormateada,
                                 total = r["total_Compra"],
                                 estatus = r["nombre_Estatus"]
@@ -68,9 +61,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // =======================================================
-        // 2. POST: REGISTRAR NUEVA COMPRA (Aumenta stock)
-        // =======================================================
         [HttpPost("registrar")]
         public IActionResult Registrar([FromBody] NuevaCompraRequest request)
         {
@@ -81,8 +71,7 @@ namespace backend_CLARA.Controllers
                 {
                     try
                     {
-                        // 1. Cabecera
-                        string insC = @"INSERT INTO COMPRAS (id_Estatus, id_Proveedor, fecha_Compra, hora_Compra, total_Compra) 
+                        string insC = @"INSERT INTO compras (id_Estatus, id_Proveedor, fecha_Compra, hora_Compra, total_Compra) 
                                         VALUES (5, @p, CURDATE(), CURTIME(), @t); SELECT LAST_INSERT_ID();";
 
                         int idC = 0;
@@ -93,10 +82,9 @@ namespace backend_CLARA.Controllers
                             idC = Convert.ToInt32(cmd.ExecuteScalar());
                         }
 
-                        // 2. Detalles y Actualización de Stock
                         foreach (var det in request.Detalles)
                         {
-                            using (var cmdD = new MySqlCommand("INSERT INTO DETALLE_COMPRA (id_Compra, id_Medicamento, cantidad) VALUES (@idC, @idM, @cant)", conn, trans))
+                            using (var cmdD = new MySqlCommand("INSERT INTO detalle_compra (id_Compra, id_Medicamento, cantidad) VALUES (@idC, @idM, @cant)", conn, trans))
                             {
                                 cmdD.Parameters.AddWithValue("@idC", idC);
                                 cmdD.Parameters.AddWithValue("@idM", det.IdMedicamento);
@@ -104,7 +92,7 @@ namespace backend_CLARA.Controllers
                                 cmdD.ExecuteNonQuery();
                             }
 
-                            using (var cmdS = new MySqlCommand("UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento + @cant WHERE id_Medicamento = @idM", conn, trans))
+                            using (var cmdS = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento + @cant WHERE id_Medicamento = @idM", conn, trans))
                             {
                                 cmdS.Parameters.AddWithValue("@cant", det.Cantidad);
                                 cmdS.Parameters.AddWithValue("@idM", det.IdMedicamento);
@@ -124,9 +112,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // =======================================================
-        // 3. DELETE: CANCELAR COMPRA (Baja Lógica y revierte stock)
-        // =======================================================
         [HttpDelete("{id}")]
         public IActionResult Eliminar(int id)
         {
@@ -137,9 +122,8 @@ namespace backend_CLARA.Controllers
                 {
                     try
                     {
-                        // 1. Verificar el estatus actual para no cancelar 2 veces
                         int estatusActual = 0;
-                        using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM COMPRAS WHERE id_Compra = @id", conn, trans))
+                        using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM compras WHERE id_Compra = @id", conn, trans))
                         {
                             cmdCheck.Parameters.AddWithValue("@id", id);
                             var result = cmdCheck.ExecuteScalar();
@@ -147,15 +131,13 @@ namespace backend_CLARA.Controllers
                             estatusActual = Convert.ToInt32(result);
                         }
 
-                        // ✨ ASUME QUE EL ESTATUS "CANCELADA" ES EL ID 4. 
                         int idEstatusCancelada = 4;
 
                         if (estatusActual == idEstatusCancelada)
                             return BadRequest("Esta compra ya se encuentra cancelada.");
 
-                        // 2. Obtener detalles para restar el stock (revertir)
                         var viejos = new List<dynamic>();
-                        using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM DETALLE_COMPRA WHERE id_Compra = @id", conn, trans))
+                        using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM detalle_compra WHERE id_Compra = @id", conn, trans))
                         {
                             cmd.Parameters.AddWithValue("@id", id);
                             using (var r = cmd.ExecuteReader())
@@ -164,10 +146,9 @@ namespace backend_CLARA.Controllers
                             }
                         }
 
-                        // 3. Revertir el stock en la tabla Medicamentos
                         foreach (var v in viejos)
                         {
-                            using (var cmdUp = new MySqlCommand("UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
+                            using (var cmdUp = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
                             {
                                 cmdUp.Parameters.AddWithValue("@c", v.cant);
                                 cmdUp.Parameters.AddWithValue("@m", v.idM);
@@ -175,8 +156,7 @@ namespace backend_CLARA.Controllers
                             }
                         }
 
-                        // 4. ✨ MAGIA: En lugar de borrar, ACTUALIZAMOS el estatus de la compra
-                        using (var cmdCancel = new MySqlCommand("UPDATE COMPRAS SET id_Estatus = @estatus WHERE id_Compra = @id", conn, trans))
+                        using (var cmdCancel = new MySqlCommand("UPDATE compras SET id_Estatus = @estatus WHERE id_Compra = @id", conn, trans))
                         {
                             cmdCancel.Parameters.AddWithValue("@estatus", idEstatusCancelada);
                             cmdCancel.Parameters.AddWithValue("@id", id);
@@ -195,9 +175,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // =======================================================
-        // 4. GET: OBTENER UNA COMPRA (Para edición)
-        // =======================================================
         [HttpGet("{id}")]
         public IActionResult ObtenerPorId(int id)
         {
@@ -206,9 +183,8 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Cabecera
                     object cabecera = null;
-                    using (var cmd = new MySqlCommand("SELECT id_Proveedor, total_Compra FROM COMPRAS WHERE id_Compra = @id", conn))
+                    using (var cmd = new MySqlCommand("SELECT id_Proveedor, total_Compra FROM compras WHERE id_Compra = @id", conn))
                     {
                         cmd.Parameters.AddWithValue("@id", id);
                         using (var r = cmd.ExecuteReader())
@@ -220,11 +196,10 @@ namespace backend_CLARA.Controllers
 
                     if (cabecera == null) return NotFound();
 
-                    // Detalles
                     var detalles = new List<object>();
                     string sqlD = @"SELECT d.id_Medicamento, m.nombre_Medicamento, d.cantidad, m.precio_Medicamento 
-                                    FROM DETALLE_COMPRA d 
-                                    INNER JOIN MEDICAMENTOS m ON d.id_Medicamento = m.id_Medicamento 
+                                    FROM detalle_compra d 
+                                    INNER JOIN medicamentos m ON d.id_Medicamento = m.id_Medicamento 
                                     WHERE d.id_Compra = @id";
 
                     using (var cmdD = new MySqlCommand(sqlD, conn))
@@ -253,9 +228,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // =======================================================
-        // 5. PUT: ACTUALIZAR COMPRA (El proceso completo)
-        // =======================================================
         [HttpPut("{id}")]
         public IActionResult Actualizar(int id, [FromBody] NuevaCompraRequest request)
         {
@@ -266,9 +238,8 @@ namespace backend_CLARA.Controllers
                 {
                     try
                     {
-                        // A. Revertir stock viejo
                         var viejos = new List<dynamic>();
-                        using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM DETALLE_COMPRA WHERE id_Compra = @id", conn, trans))
+                        using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM detalle_compra WHERE id_Compra = @id", conn, trans))
                         {
                             cmd.Parameters.AddWithValue("@id", id);
                             using (var r = cmd.ExecuteReader())
@@ -278,19 +249,18 @@ namespace backend_CLARA.Controllers
                         }
                         foreach (var v in viejos)
                         {
-                            using (var cmdUp = new MySqlCommand("UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
+                            using (var cmdUp = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
                             {
                                 cmdUp.Parameters.AddWithValue("@c", v.cant); cmdUp.Parameters.AddWithValue("@m", v.idM);
                                 cmdUp.ExecuteNonQuery();
                             }
                         }
 
-                        // B. Limpiar detalles y actualizar cabecera
-                        using (var cmdDel = new MySqlCommand("DELETE FROM DETALLE_COMPRA WHERE id_Compra = @id", conn, trans))
+                        using (var cmdDel = new MySqlCommand("DELETE FROM detalle_compra WHERE id_Compra = @id", conn, trans))
                         {
                             cmdDel.Parameters.AddWithValue("@id", id); cmdDel.ExecuteNonQuery();
                         }
-                        using (var cmdUpC = new MySqlCommand("UPDATE COMPRAS SET id_Proveedor = @p, total_Compra = @t WHERE id_Compra = @id", conn, trans))
+                        using (var cmdUpC = new MySqlCommand("UPDATE compras SET id_Proveedor = @p, total_Compra = @t WHERE id_Compra = @id", conn, trans))
                         {
                             cmdUpC.Parameters.AddWithValue("@p", request.IdProveedor);
                             cmdUpC.Parameters.AddWithValue("@t", request.TotalCompra);
@@ -298,15 +268,14 @@ namespace backend_CLARA.Controllers
                             cmdUpC.ExecuteNonQuery();
                         }
 
-                        // C. Insertar nuevos y sumar nuevo stock
                         foreach (var det in request.Detalles)
                         {
-                            using (var cmdIns = new MySqlCommand("INSERT INTO DETALLE_COMPRA (id_Compra, id_Medicamento, cantidad) VALUES (@id, @m, @c)", conn, trans))
+                            using (var cmdIns = new MySqlCommand("INSERT INTO detalle_compra (id_Compra, id_Medicamento, cantidad) VALUES (@id, @m, @c)", conn, trans))
                             {
                                 cmdIns.Parameters.AddWithValue("@id", id); cmdIns.Parameters.AddWithValue("@m", det.IdMedicamento);
                                 cmdIns.Parameters.AddWithValue("@c", det.Cantidad); cmdIns.ExecuteNonQuery();
                             }
-                            using (var cmdStock = new MySqlCommand("UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento + @c WHERE id_Medicamento = @m", conn, trans))
+                            using (var cmdStock = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento + @c WHERE id_Medicamento = @m", conn, trans))
                             {
                                 cmdStock.Parameters.AddWithValue("@c", det.Cantidad); cmdStock.Parameters.AddWithValue("@m", det.IdMedicamento);
                                 cmdStock.ExecuteNonQuery();
@@ -325,9 +294,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // =======================================================
-        // 6. GET: OBTENER TODOS LOS MEDICAMENTOS (Para Compras)
-        // =======================================================
         [HttpGet("medicamentos")]
         public IActionResult ObtenerTodosLosMedicamentos()
         {
@@ -338,15 +304,11 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ MAGIA SQL MEJORADA: 
-                    // 1. Agregamos ' (' y ')' para los paréntesis.
-                    // 2. Sumar "+ 0" al valor es un truco de MySQL para borrar los ".00" innecesarios.
-                    // Resultado: "Paracetamol (500mg)"
                     string query = @"SELECT 
                                         id_Medicamento, 
                                         CONCAT(nombre_Medicamento, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM concentracion_Valor)), concentracion_Unidad, ')') AS nombreCompuesto, 
                                         precio_Medicamento 
-                                     FROM MEDICAMENTOS";
+                                     FROM medicamentos";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader r = cmd.ExecuteReader())

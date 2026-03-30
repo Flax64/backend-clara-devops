@@ -69,7 +69,7 @@ namespace backend_CLARA.Controllers
                         if (filasAfectadas > 0)
                         {
                             long idNuevoUsuario = insertCmd.LastInsertedId;
-                            string insertPacienteQuery = "INSERT INTO PACIENTES (id_Usuario) VALUES (@idUsuario)";
+                            string insertPacienteQuery = "INSERT INTO pacientes (id_Usuario) VALUES (@idUsuario)";
                             using (MySqlCommand pacienteCmd = new MySqlCommand(insertPacienteQuery, conn))
                             {
                                 pacienteCmd.Parameters.AddWithValue("@idUsuario", idNuevoUsuario);

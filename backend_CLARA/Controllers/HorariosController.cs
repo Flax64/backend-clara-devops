@@ -22,7 +22,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ✨ Cruzamos HORARIOS con DIAS, MEDICOS y USUARIOS para traer todo legible
+                    // ✨ Cruzamos horarios con dias, medicos y usuarios para traer todo legible
                     // Y le damos formato a las horas para que salgan como "08:00 AM" desde SQL
                     string query = @"
                         SELECT 
@@ -31,11 +31,11 @@ namespace backend_CLARA.Controllers
                             d.nombre AS Dia,
                             TIME_FORMAT(h.hora_Entrada, '%h:%i %p') AS Entrada,
                             TIME_FORMAT(h.hora_Salida, '%h:%i %p') AS Salida
-                        FROM HORARIOS h
-                        INNER JOIN DIAS d ON h.id_Dia = d.id_Dia
-                        INNER JOIN MEDICOS m ON h.id_Medico = m.id_Medico
-                        INNER JOIN USUARIOS u ON m.id_Usuario = u.id_Usuario
-                        INNER JOIN ESTATUS e ON u.id_Estatus = e.id_Estatus
+                        FROM horarios h
+                        INNER JOIN dias d ON h.id_Dia = d.id_Dia
+                        INNER JOIN medicos m ON h.id_Medico = m.id_Medico
+                        INNER JOIN usuarios u ON m.id_Usuario = u.id_Usuario
+                        INNER JOIN estatus e ON u.id_Estatus = e.id_Estatus
                         WHERE e.nombre = 'Activo'
                         ORDER BY h.id_Horario ASC";
 
@@ -75,9 +75,9 @@ namespace backend_CLARA.Controllers
                     conn.Open();
                     string query = @"
                         SELECT m.id_Medico, CONCAT('Dr. ', u.nombre_Usuario, ' ', u.apellido_P) AS Nombre 
-                        FROM MEDICOS m 
-                        INNER JOIN USUARIOS u ON m.id_Usuario = u.id_Usuario 
-                        WHERE u.id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1)";
+                        FROM medicos m 
+                        INNER JOIN usuarios u ON m.id_Usuario = u.id_Usuario 
+                        WHERE u.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1)";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
@@ -100,7 +100,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    using (MySqlCommand cmd = new MySqlCommand("SELECT id_Dia, nombre FROM DIAS ORDER BY id_Dia", conn))
+                    using (MySqlCommand cmd = new MySqlCommand("SELECT id_Dia, nombre FROM dias ORDER BY id_Dia", conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
                     {
                         while (reader.Read()) { lista.Add(new { Id = reader.GetInt32(0), Nombre = reader.GetString(1) }); }
@@ -121,7 +121,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
                     // Aquí SÍ hacemos un DELETE real porque no hay id_Estatus
-                    string query = "DELETE FROM HORARIOS WHERE id_Horario = @id";
+                    string query = "DELETE FROM horarios WHERE id_Horario = @id";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@id", id);
@@ -162,7 +162,7 @@ namespace backend_CLARA.Controllers
                     // ✨ 2. VALIDACIÓN ESTRICTA DE EMPALME GENERAL (Para cualquier médico)
                     // Buscamos si en ese mismo DÍA, existe algún horario cuyo rango choque con el nuevo
                     string queryEmpalme = @"
-                        SELECT COUNT(*) FROM HORARIOS 
+                        SELECT COUNT(*) FROM horarios 
                         WHERE id_Dia = @dia 
                         AND (@entrada < hora_Salida AND @salida > hora_Entrada)";
 
@@ -180,7 +180,7 @@ namespace backend_CLARA.Controllers
                     }
 
                     // 3. Insertar el nuevo horario si el consultorio está libre
-                    string queryInsert = "INSERT INTO HORARIOS (id_Dia, id_Medico, hora_Entrada, hora_Salida) VALUES (@dia, @medico, @entrada, @salida)";
+                    string queryInsert = "INSERT INTO horarios (id_Dia, id_Medico, hora_Entrada, hora_Salida) VALUES (@dia, @medico, @entrada, @salida)";
                     using (MySqlCommand cmd = new MySqlCommand(queryInsert, conn))
                     {
                         cmd.Parameters.AddWithValue("@dia", request.IdDia);
@@ -210,7 +210,7 @@ namespace backend_CLARA.Controllers
                     string query = @"SELECT id_Horario, id_Dia, id_Medico, 
                                      TIME_FORMAT(hora_Entrada, '%H:%i') as Entrada, 
                                      TIME_FORMAT(hora_Salida, '%H:%i') as Salida 
-                                     FROM HORARIOS WHERE id_Horario = @id";
+                                     FROM horarios WHERE id_Horario = @id";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@id", id);
@@ -252,7 +252,7 @@ namespace backend_CLARA.Controllers
 
                     // ✨ VALIDACIÓN: Choque de horarios ignorando el ID actual (@id)
                     string queryEmpalme = @"
-                        SELECT COUNT(*) FROM HORARIOS 
+                        SELECT COUNT(*) FROM horarios 
                         WHERE id_Dia = @dia AND id_Horario != @id
                         AND (@entrada < hora_Salida AND @salida > hora_Entrada)";
 
@@ -269,7 +269,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    string queryUpdate = @"UPDATE HORARIOS SET id_Dia = @dia, id_Medico = @medico, 
+                    string queryUpdate = @"UPDATE horarios SET id_Dia = @dia, id_Medico = @medico, 
                                           hora_Entrada = @entrada, hora_Salida = @salida 
                                           WHERE id_Horario = @id";
                     using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn))

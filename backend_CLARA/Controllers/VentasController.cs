@@ -25,10 +25,10 @@ namespace backend_CLARA.Controllers
                     conn.Open();
                     string query = @"SELECT v.id_Venta, v.fecha_Venta, v.hora_Venta, v.nombre_Cliente, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Vendedor, 
                                     v.total_Venta, m.nombre AS metodo_Pago, e.nombre AS nombre_Estatus
-                                    FROM VENTAS v
-                                    INNER JOIN USUARIOS u ON v.id_Usuario = u.id_Usuario
-                                    INNER JOIN METODOS_PAGO m ON v.id_Metodo = m.id_Metodo
-                                    INNER JOIN ESTATUS e ON v.id_Estatus = e.id_Estatus
+                                    FROM ventas v
+                                    INNER JOIN usuarios u ON v.id_Usuario = u.id_Usuario
+                                    INNER JOIN metodos_pago m ON v.id_Metodo = m.id_Metodo
+                                    INNER JOIN estatus e ON v.id_Estatus = e.id_Estatus
                                     ORDER BY v.fecha_Venta DESC, v.hora_Venta DESC, v.id_Venta ASC ";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -81,7 +81,7 @@ namespace backend_CLARA.Controllers
                         try
                         {
                             int estatusActual = 0;
-                            using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM VENTAS WHERE id_Venta = @id", conn, transaccion))
+                            using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM ventas WHERE id_Venta = @id", conn, transaccion))
                             {
                                 cmdCheck.Parameters.AddWithValue("@id", id);
                                 var result = cmdCheck.ExecuteScalar();
@@ -91,7 +91,7 @@ namespace backend_CLARA.Controllers
 
                             // Obtenemos el ID de "Cancelada" dinámicamente
                             int idEstatusCancelada = 0;
-                            using (var cmdCheckStatus = new MySqlCommand("SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Cancelada' LIMIT 1", conn, transaccion))
+                            using (var cmdCheckStatus = new MySqlCommand("SELECT id_Estatus FROM estatus WHERE nombre = 'Cancelada' LIMIT 1", conn, transaccion))
                             {
                                 idEstatusCancelada = Convert.ToInt32(cmdCheckStatus.ExecuteScalar());
                             }
@@ -101,7 +101,7 @@ namespace backend_CLARA.Controllers
 
                             // PASO 0: Ver si tenía consulta ligada
                             int? idConsultaRevertir = null;
-                            using (MySqlCommand cmdGet = new MySqlCommand("SELECT id_Consulta FROM VENTAS WHERE id_Venta = @id", conn, transaccion))
+                            using (MySqlCommand cmdGet = new MySqlCommand("SELECT id_Consulta FROM ventas WHERE id_Venta = @id", conn, transaccion))
                             {
                                 cmdGet.Parameters.AddWithValue("@id", id);
                                 object res = cmdGet.ExecuteScalar();
@@ -109,7 +109,7 @@ namespace backend_CLARA.Controllers
                             }
 
                             // 1. Regresamos el stock al inventario
-                            string queryDevolverStock = "UPDATE MEDICAMENTOS m INNER JOIN DETALLE_VENTA dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
+                            string queryDevolverStock = "UPDATE medicamentos m INNER JOIN detalle_venta dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
                             using (MySqlCommand cmdDevolver = new MySqlCommand(queryDevolverStock, conn, transaccion))
                             {
                                 cmdDevolver.Parameters.AddWithValue("@id", id);
@@ -117,7 +117,7 @@ namespace backend_CLARA.Controllers
                             }
 
                             // 2. ACTUALIZAMOS EL ESTATUS A CANCELADA
-                            string queryCancelarVenta = "UPDATE VENTAS SET id_Estatus = @estatus WHERE id_Venta = @id";
+                            string queryCancelarVenta = "UPDATE ventas SET id_Estatus = @estatus WHERE id_Venta = @id";
                             using (MySqlCommand cmdVenta = new MySqlCommand(queryCancelarVenta, conn, transaccion))
                             {
                                 cmdVenta.Parameters.AddWithValue("@estatus", idEstatusCancelada);
@@ -128,7 +128,7 @@ namespace backend_CLARA.Controllers
                             // ✨ 3. CORRECCIÓN: Si tenía consulta, la regresamos a estado "Activo" para poder volver a surtirla
                             if (idConsultaRevertir.HasValue)
                             {
-                                string queryRevConsulta = "UPDATE CONSULTAS SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1) WHERE id_Consulta = @idConsulta";
+                                string queryRevConsulta = "UPDATE consultas SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1) WHERE id_Consulta = @idConsulta";
                                 using (MySqlCommand cmdRev = new MySqlCommand(queryRevConsulta, conn, transaccion))
                                 {
                                     cmdRev.Parameters.AddWithValue("@idConsulta", idConsultaRevertir.Value);
@@ -166,8 +166,8 @@ namespace backend_CLARA.Controllers
                         try
                         {
                             // 1. Insertar la Venta principal
-                            string queryVenta = @"INSERT INTO VENTAS (id_Estatus, id_Consulta, id_Metodo, id_Usuario, fecha_Venta, hora_Venta, total_Venta, nombre_Cliente) 
-                            VALUES ((SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Completada' LIMIT 1), @idConsulta, @metodo, @usuario, CURDATE(), CURTIME(), @total, @cliente);
+                            string queryVenta = @"INSERT INTO ventas (id_Estatus, id_Consulta, id_Metodo, id_Usuario, fecha_Venta, hora_Venta, total_Venta, nombre_Cliente) 
+                            VALUES ((SELECT id_Estatus FROM estatus WHERE nombre = 'Completada' LIMIT 1), @idConsulta, @metodo, @usuario, CURDATE(), CURTIME(), @total, @cliente);
                             SELECT LAST_INSERT_ID();";
 
                             int nuevoIdVenta = 0;
@@ -183,8 +183,8 @@ namespace backend_CLARA.Controllers
                             }
 
                             // 2. Insertar los detalles y descontar stock
-                            string queryDetalle = "INSERT INTO DETALLE_VENTA (id_Venta, id_Medicamento, cantidad) VALUES (@idVenta, @idMed, @cant)";
-                            string queryDescontarStock = "UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento - @cant WHERE id_Medicamento = @idMed";
+                            string queryDetalle = "INSERT INTO detalle_venta (id_Venta, id_Medicamento, cantidad) VALUES (@idVenta, @idMed, @cant)";
+                            string queryDescontarStock = "UPDATE medicamentos SET stock_Medicamento = stock_Medicamento - @cant WHERE id_Medicamento = @idMed";
 
                             foreach (var item in request.Detalles)
                             {
@@ -207,7 +207,7 @@ namespace backend_CLARA.Controllers
                             // 3. Cambiamos la consulta a 'Surtido'
                             if (request.IdConsulta.HasValue)
                             {
-                                string queryUpdateConsulta = "UPDATE CONSULTAS SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Surtido' LIMIT 1) WHERE id_Consulta = @idConsulta";
+                                string queryUpdateConsulta = "UPDATE consultas SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Surtido' LIMIT 1) WHERE id_Consulta = @idConsulta";
                                 using (MySqlCommand cmdConsulta = new MySqlCommand(queryUpdateConsulta, conn, transaccion))
                                 {
                                     cmdConsulta.Parameters.AddWithValue("@idConsulta", request.IdConsulta.Value);
@@ -246,7 +246,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    string queryVenta = "SELECT id_Venta, nombre_Cliente, id_Metodo FROM VENTAS WHERE id_Venta = @id";
+                    string queryVenta = "SELECT id_Venta, nombre_Cliente, id_Metodo FROM ventas WHERE id_Venta = @id";
                     using (MySqlCommand cmd = new MySqlCommand(queryVenta, conn))
                     {
                         cmd.Parameters.AddWithValue("@id", id);
@@ -266,8 +266,8 @@ namespace backend_CLARA.Controllers
                     }
 
                     string queryDetalle = @"SELECT dv.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, 
-                    SUM(dv.cantidad) AS cantidad, m.precio_Medicamento FROM DETALLE_VENTA dv
-                    INNER JOIN MEDICAMENTOS m ON dv.id_Medicamento = m.id_Medicamento
+                    SUM(dv.cantidad) AS cantidad, m.precio_Medicamento FROM detalle_venta dv
+                    INNER JOIN medicamentos m ON dv.id_Medicamento = m.id_Medicamento
                     WHERE dv.id_Venta = @id
                     GROUP BY dv.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, m.precio_Medicamento";
 
@@ -325,7 +325,7 @@ namespace backend_CLARA.Controllers
                     {
                         try
                         {
-                            string queryUpdate = "UPDATE VENTAS SET nombre_Cliente = @cliente, id_Metodo = @metodo, total_Venta = @total WHERE id_Venta = @id";
+                            string queryUpdate = "UPDATE ventas SET nombre_Cliente = @cliente, id_Metodo = @metodo, total_Venta = @total WHERE id_Venta = @id";
                             using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn, transaccion))
                             {
                                 cmd.Parameters.AddWithValue("@cliente", request.NombreCliente);
@@ -335,22 +335,22 @@ namespace backend_CLARA.Controllers
                                 cmd.ExecuteNonQuery();
                             }
 
-                            string queryDevolverStock = "UPDATE MEDICAMENTOS m INNER JOIN DETALLE_VENTA dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
+                            string queryDevolverStock = "UPDATE medicamentos m INNER JOIN detalle_venta dv ON m.id_Medicamento = dv.id_Medicamento SET m.stock_Medicamento = m.stock_Medicamento + dv.cantidad WHERE dv.id_Venta = @id";
                             using (MySqlCommand cmdDevolver = new MySqlCommand(queryDevolverStock, conn, transaccion))
                             {
                                 cmdDevolver.Parameters.AddWithValue("@id", id);
                                 cmdDevolver.ExecuteNonQuery();
                             }
 
-                            string queryBorrarDetalles = "DELETE FROM DETALLE_VENTA WHERE id_Venta = @id";
+                            string queryBorrarDetalles = "DELETE FROM detalle_venta WHERE id_Venta = @id";
                             using (MySqlCommand cmdBorrar = new MySqlCommand(queryBorrarDetalles, conn, transaccion))
                             {
                                 cmdBorrar.Parameters.AddWithValue("@id", id);
                                 cmdBorrar.ExecuteNonQuery();
                             }
 
-                            string queryInsertarDetalle = "INSERT INTO DETALLE_VENTA (id_Venta, id_Medicamento, cantidad) VALUES (@idVenta, @idMed, @cant)";
-                            string queryDescontarNuevoStock = "UPDATE MEDICAMENTOS SET stock_Medicamento = stock_Medicamento - @cant WHERE id_Medicamento = @idMed";
+                            string queryInsertarDetalle = "INSERT INTO detalle_venta (id_Venta, id_Medicamento, cantidad) VALUES (@idVenta, @idMed, @cant)";
+                            string queryDescontarNuevoStock = "UPDATE medicamentos SET stock_Medicamento = stock_Medicamento - @cant WHERE id_Medicamento = @idMed";
 
                             foreach (var item in request.Detalles)
                             {
@@ -396,7 +396,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string query = "SELECT id_Metodo, nombre FROM METODOS_PAGO";
+                    string query = "SELECT id_Metodo, nombre FROM metodos_pago";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
@@ -431,7 +431,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string query = "SELECT id_Medicamento, nombre_Medicamento, concentracion_Valor, concentracion_Unidad, precio_Medicamento, stock_Medicamento FROM MEDICAMENTOS WHERE stock_Medicamento > 0";
+                    string query = "SELECT id_Medicamento, nombre_Medicamento, concentracion_Valor, concentracion_Unidad, precio_Medicamento, stock_Medicamento FROM medicamentos WHERE stock_Medicamento > 0";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
@@ -482,11 +482,11 @@ namespace backend_CLARA.Controllers
                     // ✨ CORRECCIÓN: Buscamos las consultas que están "Activas" (listas para cobrar)
                     string query = @"
                     SELECT c.id_Consulta, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Paciente 
-                    FROM CONSULTAS c
-                    INNER JOIN CITAS ci ON c.id_Cita = ci.id_Cita
-                    INNER JOIN PACIENTES p ON ci.id_Paciente = p.id_Paciente
-                    INNER JOIN USUARIOS u ON p.id_Usuario = u.id_Usuario
-                    WHERE c.id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Activo' LIMIT 1) 
+                    FROM consultas c
+                    INNER JOIN citas ci ON c.id_Cita = ci.id_Cita
+                    INNER JOIN pacientes p ON ci.id_Paciente = p.id_Paciente
+                    INNER JOIN usuarios u ON p.id_Usuario = u.id_Usuario
+                    WHERE c.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1) 
                     AND ci.fecha_Cita >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
                     ORDER BY c.id_Consulta DESC LIMIT 50";
 
@@ -526,8 +526,8 @@ namespace backend_CLARA.Controllers
                     string query = @"
                 SELECT dr.id_Medicamento, m.nombre_Medicamento, m.concentracion_Valor, m.concentracion_Unidad, 
                        m.precio_Medicamento, m.stock_Medicamento
-                FROM DETALLE_RECETA dr
-                INNER JOIN MEDICAMENTOS m ON dr.id_Medicamento = m.id_Medicamento
+                FROM detalle_receta dr
+                INNER JOIN medicamentos m ON dr.id_Medicamento = m.id_Medicamento
                 WHERE dr.id_Consulta = @idConsulta";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))

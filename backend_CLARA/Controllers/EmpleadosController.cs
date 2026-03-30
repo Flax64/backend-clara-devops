@@ -30,11 +30,11 @@ namespace backend_CLARA.Controllers
                             g.nombre AS Genero,
                             m.cedula_Profesional, m.especialidad,
                             e.nombre AS Estatus 
-                        FROM USUARIOS u
-                        INNER JOIN ROLES r ON u.id_Rol = r.id_Rol
-                        INNER JOIN GENEROS g ON u.id_Genero = g.id_Genero
-                        INNER JOIN ESTATUS e ON u.id_Estatus = e.id_Estatus
-                        LEFT JOIN MEDICOS m ON u.id_Usuario = m.id_Usuario
+                        FROM usuarios u
+                        INNER JOIN roles r ON u.id_Rol = r.id_Rol
+                        INNER JOIN generos g ON u.id_Genero = g.id_Genero
+                        INNER JOIN estatus e ON u.id_Estatus = e.id_Estatus
+                        LEFT JOIN medicos m ON u.id_Usuario = m.id_Usuario
                         WHERE r.nombre != 'Paciente'";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
@@ -80,8 +80,8 @@ namespace backend_CLARA.Controllers
 
                     string checkQuery = @"
                         SELECT u.id_Usuario, r.nombre 
-                        FROM USUARIOS u 
-                        INNER JOIN ROLES r ON u.id_Rol = r.id_Rol 
+                        FROM usuarios u 
+                        INNER JOIN roles r ON u.id_Rol = r.id_Rol 
                         WHERE u.email_Usuario = @email";
 
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
@@ -113,7 +113,7 @@ namespace backend_CLARA.Controllers
                     // ✨ GENERAMOS EL HASH ANTES DE INSERTAR
                     string hashPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
-                    string query = @"INSERT INTO USUARIOS 
+                    string query = @"INSERT INTO usuarios 
                         (id_Estatus, id_Genero, id_Rol, nombre_Usuario, apellido_P, apellido_M, email_Usuario, password_Usuario, telefono, fecha_Nacimiento) 
                         VALUES (@idEstatus, @idGenero, @idRol, @nombre, @apPaterno, @apMaterno, @email, @password, @telefono, @fechaNac)";
 
@@ -135,7 +135,7 @@ namespace backend_CLARA.Controllers
 
                         if (!string.IsNullOrEmpty(request.CedulaProfesional) && !string.IsNullOrEmpty(request.Especialidad))
                         {
-                            string queryMedico = "INSERT INTO MEDICOS (id_Usuario, cedula_Profesional, especialidad) VALUES (@idUsu, @cedula, @especialidad)";
+                            string queryMedico = "INSERT INTO medicos (id_Usuario, cedula_Profesional, especialidad) VALUES (@idUsu, @cedula, @especialidad)";
                             using (MySqlCommand cmdMed = new MySqlCommand(queryMedico, conn))
                             {
                                 cmdMed.Parameters.AddWithValue("@idUsu", idNuevoUsuario);
@@ -164,7 +164,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    string checkEmailQuery = "SELECT COUNT(*) FROM USUARIOS WHERE email_Usuario = @email AND id_Usuario != @id";
+                    string checkEmailQuery = "SELECT COUNT(*) FROM usuarios WHERE email_Usuario = @email AND id_Usuario != @id";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkEmailQuery, conn))
                     {
                         checkCmd.Parameters.AddWithValue("@email", request.Email);
@@ -175,7 +175,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    string queryUpdate = @"UPDATE USUARIOS SET 
+                    string queryUpdate = @"UPDATE usuarios SET 
                         id_Estatus = @idEstatus, id_Genero = @idGenero, id_Rol = @idRol, 
                         nombre_Usuario = @nombre, apellido_P = @apPaterno, apellido_M = @apMaterno, 
                         email_Usuario = @email, telefono = @telefono, fecha_Nacimiento = @fechaNac ";
@@ -211,7 +211,7 @@ namespace backend_CLARA.Controllers
                         cmd.ExecuteNonQuery();
                     }
 
-                    string queryBorrarPaciente = "DELETE FROM PACIENTES WHERE id_Usuario = @id";
+                    string queryBorrarPaciente = "DELETE FROM pacientes WHERE id_Usuario = @id";
                     using (MySqlCommand cmdBorrarPac = new MySqlCommand(queryBorrarPaciente, conn))
                     {
                         cmdBorrarPac.Parameters.AddWithValue("@id", id);
@@ -221,7 +221,7 @@ namespace backend_CLARA.Controllers
 
                     if (!string.IsNullOrWhiteSpace(request.CedulaProfesional) && !string.IsNullOrWhiteSpace(request.Especialidad))
                     {
-                        string checkMedicoQuery = "SELECT COUNT(*) FROM MEDICOS WHERE id_Usuario = @id";
+                        string checkMedicoQuery = "SELECT COUNT(*) FROM medicos WHERE id_Usuario = @id";
                         int existeMedico = 0;
                         using (MySqlCommand cmdCheck = new MySqlCommand(checkMedicoQuery, conn))
                         {
@@ -231,7 +231,7 @@ namespace backend_CLARA.Controllers
 
                         if (existeMedico > 0)
                         {
-                            string queryUpdateMed = "UPDATE MEDICOS SET cedula_Profesional = @cedula, especialidad = @esp WHERE id_Usuario = @id";
+                            string queryUpdateMed = "UPDATE medicos SET cedula_Profesional = @cedula, especialidad = @esp WHERE id_Usuario = @id";
                             using (MySqlCommand cmdUpdMed = new MySqlCommand(queryUpdateMed, conn))
                             {
                                 cmdUpdMed.Parameters.AddWithValue("@id", id);
@@ -242,7 +242,7 @@ namespace backend_CLARA.Controllers
                         }
                         else
                         {
-                            string queryInsertMed = "INSERT INTO MEDICOS (id_Usuario, cedula_Profesional, especialidad) VALUES (@id, @cedula, @esp)";
+                            string queryInsertMed = "INSERT INTO medicos (id_Usuario, cedula_Profesional, especialidad) VALUES (@id, @cedula, @esp)";
                             using (MySqlCommand cmdInsMed = new MySqlCommand(queryInsertMed, conn))
                             {
                                 cmdInsMed.Parameters.AddWithValue("@id", id);
@@ -255,7 +255,7 @@ namespace backend_CLARA.Controllers
                     else
                     {
                         int idMedicoTemp = 0;
-                        using (var cmdBusca = new MySqlCommand("SELECT id_Medico FROM MEDICOS WHERE id_Usuario = @id", conn))
+                        using (var cmdBusca = new MySqlCommand("SELECT id_Medico FROM medicos WHERE id_Usuario = @id", conn))
                         {
                             cmdBusca.Parameters.AddWithValue("@id", id);
                             var res = cmdBusca.ExecuteScalar();
@@ -264,16 +264,16 @@ namespace backend_CLARA.Controllers
 
                         if (idMedicoTemp > 0)
                         {
-                            using (var cmdDelHor = new MySqlCommand("DELETE FROM HORARIOS WHERE id_Medico = @idMed", conn))
+                            using (var cmdDelHor = new MySqlCommand("DELETE FROM horarios WHERE id_Medico = @idMed", conn))
                             {
                                 cmdDelHor.Parameters.AddWithValue("@idMed", idMedicoTemp);
                                 cmdDelHor.ExecuteNonQuery();
                             }
 
                             string qCancelarCitas = @"
-                                UPDATE CITAS 
-                                SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Cancelada' LIMIT 1)
-                                WHERE id_Medico = @idMed AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))";
+                                UPDATE citas 
+                                SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Cancelada' LIMIT 1)
+                                WHERE id_Medico = @idMed AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada'))";
 
                             using (var cmdCancCitas = new MySqlCommand(qCancelarCitas, conn))
                             {
@@ -281,7 +281,7 @@ namespace backend_CLARA.Controllers
                                 cmdCancCitas.ExecuteNonQuery();
                             }
 
-                            string queryBorrarMedico = "DELETE FROM MEDICOS WHERE id_Usuario = @id";
+                            string queryBorrarMedico = "DELETE FROM medicos WHERE id_Usuario = @id";
                             using (MySqlCommand cmdDelMed = new MySqlCommand(queryBorrarMedico, conn))
                             {
                                 cmdDelMed.Parameters.AddWithValue("@id", id);
@@ -309,8 +309,8 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
                     string queryBaja = @"
-                        UPDATE USUARIOS 
-                        SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Inactivo' LIMIT 1) 
+                        UPDATE usuarios 
+                        SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Inactivo' LIMIT 1) 
                         WHERE id_Usuario = @id";
 
                     using (MySqlCommand cmd = new MySqlCommand(queryBaja, conn))
@@ -343,19 +343,19 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    using (var cmd = new MySqlCommand("SELECT id_Rol, nombre FROM ROLES WHERE nombre != 'Paciente'", conn))
+                    using (var cmd = new MySqlCommand("SELECT id_Rol, nombre FROM roles WHERE nombre != 'Paciente'", conn))
                     using (var reader = cmd.ExecuteReader())
                     {
                         while (reader.Read()) { respuesta.Roles.Add(new CatalogoItem { Id = reader.GetInt32(0), Nombre = reader.GetString(1) }); }
                     }
 
-                    using (var cmd = new MySqlCommand("SELECT id_Genero, nombre FROM GENEROS", conn))
+                    using (var cmd = new MySqlCommand("SELECT id_Genero, nombre FROM generos", conn))
                     using (var reader = cmd.ExecuteReader())
                     {
                         while (reader.Read()) { respuesta.Generos.Add(new CatalogoItem { Id = reader.GetInt32(0), Nombre = reader.GetString(1) }); }
                     }
 
-                    string queryEstatus = "SELECT id_Estatus, nombre FROM ESTATUS WHERE nombre IN ('Activo', 'Inactivo')";
+                    string queryEstatus = "SELECT id_Estatus, nombre FROM estatus WHERE nombre IN ('Activo', 'Inactivo')";
                     using (var cmd = new MySqlCommand(queryEstatus, conn))
                     using (var reader = cmd.ExecuteReader())
                     {

@@ -24,9 +24,9 @@ namespace backend_CLARA.Controllers
                     conn.Open();
                     string getQuery = @"
                         SELECT r.id_Rol, r.nombre, GROUP_CONCAT(p.nombre SEPARATOR ', ') as permisosAsignados
-                        FROM ROLES r
+                        FROM roles r
                         LEFT JOIN permisos_has_roles phr ON r.id_Rol = phr.id_Rol
-                        LEFT JOIN PERMISOS p ON phr.id_Permiso = p.id_Permiso
+                        LEFT JOIN permisos p ON phr.id_Permiso = p.id_Permiso
                         GROUP BY r.id_Rol, r.nombre";
 
                     using (MySqlCommand cmd = new MySqlCommand(getQuery, conn))
@@ -61,7 +61,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string getQuery = "SELECT id_Permiso, nombre FROM PERMISOS";
+                    string getQuery = "SELECT id_Permiso, nombre FROM permisos";
                     using (MySqlCommand cmd = new MySqlCommand(getQuery, conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
                     {
@@ -176,7 +176,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string checkQuery = "SELECT COUNT(*) FROM ROLES WHERE nombre = @nombre";
+                    string checkQuery = "SELECT COUNT(*) FROM roles WHERE nombre = @nombre";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
                     {
                         checkCmd.Parameters.AddWithValue("@nombre", request.Nombre);
@@ -188,7 +188,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    string query = "INSERT INTO ROLES (nombre) VALUES (@nombre)";
+                    string query = "INSERT INTO roles (nombre) VALUES (@nombre)";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@nombre", request.Nombre);
@@ -213,7 +213,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string checkQuery = "SELECT COUNT(*) FROM ROLES WHERE nombre = @nombre AND id_Rol != @idRol";
+                    string checkQuery = "SELECT COUNT(*) FROM roles WHERE nombre = @nombre AND id_Rol != @idRol";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn))
                     {
                         checkCmd.Parameters.AddWithValue("@nombre", request.Nombre);
@@ -226,7 +226,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    string query = "UPDATE ROLES SET nombre = @nombre WHERE id_Rol = @idRol";
+                    string query = "UPDATE roles SET nombre = @nombre WHERE id_Rol = @idRol";
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
                         cmd.Parameters.AddWithValue("@nombre", request.Nombre);
@@ -255,7 +255,7 @@ namespace backend_CLARA.Controllers
                     {
                         try
                         {
-                            string checkQuery = "SELECT COUNT(*) FROM USUARIOS WHERE id_Rol = @idRol";
+                            string checkQuery = "SELECT COUNT(*) FROM usuarios WHERE id_Rol = @idRol";
                             using (MySqlCommand checkCmd = new MySqlCommand(checkQuery, conn, transaction))
                             {
                                 checkCmd.Parameters.AddWithValue("@idRol", idRol);
@@ -275,7 +275,7 @@ namespace backend_CLARA.Controllers
                                 cmdPermisos.ExecuteNonQuery();
                             }
 
-                            string deleteRolQuery = "DELETE FROM ROLES WHERE id_Rol = @idRol";
+                            string deleteRolQuery = "DELETE FROM roles WHERE id_Rol = @idRol";
                             using (MySqlCommand cmdRol = new MySqlCommand(deleteRolQuery, conn, transaction))
                             {
                                 cmdRol.Parameters.AddWithValue("@idRol", idRol);

@@ -1,6 +1,7 @@
 ﻿using backend_CLARA;
 using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
+using System.Collections.Generic;
 
 // --- SEGUNDO CONTROLADOR ---
 [Route("api/[controller]")]
@@ -16,7 +17,7 @@ public class ProveedoresController : ControllerBase
         using (MySqlConnection conn = new MySqlConnection(_connectionString))
         {
             conn.Open();
-            string sql = "SELECT id_Proveedor, nombre_Proveedor FROM PROVEEDORES WHERE id_Estatus = 1";
+            string sql = "SELECT id_Proveedor, nombre_Proveedor FROM proveedores WHERE id_Estatus = 1";
             using (var cmd = new MySqlCommand(sql, conn))
             using (var r = cmd.ExecuteReader())
             {
