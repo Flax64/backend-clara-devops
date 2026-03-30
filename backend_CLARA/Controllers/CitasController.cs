@@ -64,17 +64,26 @@ namespace backend_CLARA.Controllers
                         INNER JOIN USUARIOS um ON m.id_Usuario = um.id_Usuario
                         WHERE 1=1 ";
 
-                    // ✨ REGLA DE SEGURIDAD: Si es paciente, filtramos solo sus citas
+                    // ✨ REGLAS DE SEGURIDAD INTELIGENTES
                     if (rolUsuario == "Paciente")
                     {
+                        // Si es paciente, solo ve las citas donde él es el paciente
                         query += " AND up.id_Usuario = @idUsuarioLogeado ";
                     }
+                    else if (rolUsuario == "Médico" || rolUsuario == "Medico")
+                    {
+                        // Si es médico, solo ve las citas donde él es el doctor asignado
+                        query += " AND um.id_Usuario = @idUsuarioLogeado ";
+                    }
+                    // Si es cualquier otro rol (Administrador, Recepcionista, Cajero, etc.), 
+                    // no entra a ningún IF y la query se queda como "WHERE 1=1", devolviendo TODO.
 
                     query += " ORDER BY c.fecha_Cita DESC, c.hora_Cita DESC";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
-                        if (rolUsuario == "Paciente")
+                        // Pasamos el parámetro solo si se activó algún filtro
+                        if (rolUsuario == "Paciente" || rolUsuario == "Médico" || rolUsuario == "Medico")
                         {
                             cmd.Parameters.AddWithValue("@idUsuarioLogeado", idUsuarioLogeado);
                         }
@@ -378,7 +387,7 @@ namespace backend_CLARA.Controllers
                                     IdMedico = reader.GetInt32(2),
                                     Fecha = reader.GetString(3),
                                     Hora = reader.GetString(4),
-                                    Estado = reader.GetString(5), 
+                                    Estado = reader.GetString(5),
                                     MedicoNombre = reader.GetString(6).Trim()
                                 });
                             }
@@ -397,8 +406,6 @@ namespace backend_CLARA.Controllers
         [HttpGet("pacientes")]
         public IActionResult GetPacientesCombo([FromQuery] string correo)
         {
-            // (MANTÉN EL MISMO CÓDIGO QUE YA TENÍAS EN ESTE ENDPOINT, NO CAMBIA NADA AQUÍ)
-            // ... (Lo omito para no saturar, pero déjalo tal como lo tienes en tu código actual) ...
             try
             {
                 var lista = new List<object>();
@@ -438,7 +445,7 @@ namespace backend_CLARA.Controllers
             catch (Exception ex) { return StatusCode(500, new { error = "Error al obtener pacientes: " + ex.Message }); }
         }
 
-        // --- 3. OBTENER HORAS DISPONIBLES (AHORA IGNORA LA CITA ACTUAL) ---
+        // --- 3. OBTENER HORAS DISPONIBLES ---
         [HttpGet("horas-disponibles")]
         public IActionResult GetHorasDisponibles([FromQuery] string fecha, [FromQuery] int? idCita = null)
         {
@@ -453,8 +460,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ 1. OBTENEMOS LOS HORARIOS REALES DE LOS DOCTORES PARA ESE DÍA
-                    // Sin importar si salen a las 8 PM o a las 11:45 PM
                     string queryHorarios = "SELECT hora_Entrada, hora_Salida FROM HORARIOS WHERE id_Dia = @dia";
                     List<Tuple<TimeSpan, TimeSpan>> rangosMedicos = new List<Tuple<TimeSpan, TimeSpan>>();
 
@@ -470,15 +475,12 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // Si ningún doctor trabaja ese día, devolvemos la lista vacía
                     if (rangosMedicos.Count == 0) return Ok(horasGeneradas);
 
-                    // ✨ 2. GENERAMOS LOS BLOQUES DE 15 MINUTOS RESPETANDO LAS SALIDAS REALES
                     foreach (var rango in rangosMedicos)
                     {
-                        TimeSpan horaIteracion = rango.Item1; // Ejemplo: Inicia 15:00 (3:00 PM)
+                        TimeSpan horaIteracion = rango.Item1;
 
-                        // Mientras la hora actual + 15 mins no supere la hora de salida del doctor (Ej: 23:45)
                         while (horaIteracion.Add(TimeSpan.FromMinutes(15)) <= rango.Item2)
                         {
                             string horaString = horaIteracion.ToString(@"hh\:mm");
@@ -490,10 +492,8 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 3. ORDENAMOS LAS HORAS DE MENOR A MAYOR
                     horasGeneradas.Sort();
 
-                    // 4. ELIMINAMOS LAS HORAS QUE YA ESTÁN OCUPADAS EN OTRAS CITAS
                     string queryOcupadas = @"
                         SELECT TIME_FORMAT(hora_Cita, '%H:%i') 
                         FROM CITAS 
@@ -501,7 +501,7 @@ namespace backend_CLARA.Controllers
 
                     if (idCita.HasValue && idCita.Value > 0)
                     {
-                        queryOcupadas += " AND id_Cita != @idCita"; // Ignoramos la cita actual si estamos en CitasUpdate
+                        queryOcupadas += " AND id_Cita != @idCita";
                     }
 
                     using (MySqlCommand cmdOcupadas = new MySqlCommand(queryOcupadas, conn))
@@ -514,13 +514,12 @@ namespace backend_CLARA.Controllers
                             while (reader.Read())
                             {
                                 string horaOcupada = reader.GetString(0);
-                                horasGeneradas.Remove(horaOcupada); // La quitamos de la lista disponible
+                                horasGeneradas.Remove(horaOcupada);
                             }
                         }
                     }
                 }
 
-                // 5. DEVOLVEMOS LA LISTA LIMPIA A VISUAL BASIC
                 return Ok(horasGeneradas);
             }
             catch (Exception ex)
@@ -529,7 +528,7 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // --- 4. OBTENER MÉDICO DISPONIBLE (AHORA IGNORA LA CITA ACTUAL) ---
+        // --- 4. OBTENER MÉDICO DISPONIBLE ---
         [HttpGet("medico-disponible")]
         public IActionResult GetMedicoDisponible([FromQuery] string fecha, [FromQuery] string hora, [FromQuery] int idCita = 0)
         {
@@ -541,7 +540,6 @@ namespace backend_CLARA.Controllers
                     DateTime fechaParsed = DateTime.Parse(fecha);
                     int diaSemanaMySql = (int)fechaParsed.DayOfWeek + 1;
 
-                    // ✨ MAGIA AQUÍ TAMBIÉN: Ignoramos la cita actual al buscar médico
                     string query = @"
                         SELECT m.id_Medico, CONCAT('Dr. ', u.nombre_Usuario, ' ', u.apellido_P) AS Nombre
                         FROM MEDICOS m
@@ -586,7 +584,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. Buscamos citas que ya NO tienen un horario válido
                     string query = @"
                         SELECT c.id_Cita, CONCAT(up.nombre_Usuario, ' ', up.apellido_P) AS Paciente, 
                                TIME_FORMAT(c.hora_Cita, '%h:%i %p') AS Hora, e.nombre AS Estado
@@ -619,7 +616,6 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. Generamos alertas y pasamos las confirmadas a Pendiente
                     foreach (var cita in citasHuerfanas)
                     {
                         alertas.Add($"La hora de la cita de {cita.Paciente} a las {cita.Hora} no está disponible, favor de editarla y reagendarla.");
