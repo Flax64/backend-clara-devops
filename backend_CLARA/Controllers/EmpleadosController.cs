@@ -10,7 +10,7 @@ namespace backend_CLARA.Controllers
     [ApiController]
     public class EmpleadosController : ControllerBase
     {
-        private readonly string _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
+        private readonly string _connectionString = ConexionDB.Cadena;
 
         // --- 1. LEER TODOS ---
         [HttpGet]

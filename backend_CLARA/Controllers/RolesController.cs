@@ -10,7 +10,7 @@ namespace backend_CLARA.Controllers
     [ApiController]
     public class RolesController : ControllerBase
     {
-        private readonly String _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
+        private readonly String _connectionString = ConexionDB.Cadena;
 
         // 1. Obtener todos los roles
         [HttpGet]

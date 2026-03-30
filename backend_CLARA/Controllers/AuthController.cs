@@ -14,7 +14,7 @@ namespace backend_CLARA.Controllers
     [ApiController]
     public class AuthController : ControllerBase
     {
-        private readonly String _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
+        private readonly String _connectionString = ConexionDB.Cadena;
 
         // Nuestra memoria RAM: Diccionario que asocia un Token con el Estado de Recuperación
         private static Dictionary<string, Models.EstadoRecuperacion> _memoriaTemporal = new Dictionary<string, Models.EstadoRecuperacion>();

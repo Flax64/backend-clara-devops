@@ -11,7 +11,7 @@ namespace backend_CLARA.Controllers
     [ApiController]
     public class ComprasController : ControllerBase
     {
-        private readonly string _connectionString = "Server=localhost; Database=farmacia; Uid=root; Pwd=KameHameH4!";
+        private readonly string _connectionString = ConexionDB.Cadena;
 
         // =======================================================
         // 1. GET: LISTADO GENERAL (Para la tabla principal)

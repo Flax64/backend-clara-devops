@@ -10,7 +10,7 @@ namespace backend_CLARA.Controllers
     [ApiController]
     public class VentasController : ControllerBase
     {
-        private readonly string _connectionString = "Server=localhost; Database=farmacia; Uid=root; Pwd=KameHameH4!";
+        private readonly string _connectionString = ConexionDB.Cadena;
 
         // Ruta GET para obtener todas las ventas
         [HttpGet("lista")]

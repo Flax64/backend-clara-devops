@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using backend_CLARA;
+using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
 
 // --- SEGUNDO CONTROLADOR ---
@@ -6,7 +7,7 @@ using MySql.Data.MySqlClient;
 [ApiController]
 public class ProveedoresController : ControllerBase
 {
-    private readonly string _connectionString = "Server=localhost; Database=farmacia; Uid=root; Pwd=KameHameH4!";
+    private readonly string _connectionString = ConexionDB.Cadena;
 
     [HttpGet("lista")]
     public IActionResult Get()

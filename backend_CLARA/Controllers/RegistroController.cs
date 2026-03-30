@@ -10,7 +10,7 @@ namespace backend_CLARA.Controllers
     [ApiController]
     public class RegistroController : ControllerBase
     {
-        private readonly String _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
+        private readonly String _connectionString = ConexionDB.Cadena;
 
         [HttpPost("registar")]
         public IActionResult Registrar([FromBody] RegistroRequest request)

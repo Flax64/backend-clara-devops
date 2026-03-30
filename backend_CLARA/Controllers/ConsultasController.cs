@@ -10,7 +10,7 @@ namespace backend_CLARA.Controllers
     [ApiController]
     public class ConsultasController : ControllerBase
     {
-        private readonly string _connectionString = "Server=localhost; Database=farmacia; Uid=root ; Pwd=KameHameH4!";
+        private readonly string _connectionString = ConexionDB.Cadena;
 
         // --- 1. OBTENER CITAS DISPONIBLES DEL DÍA (Que no tengan consulta) ---
         [HttpGet("citas-disponibles")]
