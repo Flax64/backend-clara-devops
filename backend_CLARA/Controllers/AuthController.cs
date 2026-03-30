@@ -33,9 +33,14 @@ namespace backend_CLARA.Controllers
 
                     int? idUsuario = null;
                     string dbPassword = null;
+                    string estatusUsuario = null; // ✨ Variable para guardar el estatus
 
-                    // ✨ 1. Extraemos los datos en lugar de solo contar
-                    string Query = "SELECT id_Usuario, password_Usuario FROM usuarios WHERE BINARY email_Usuario = @correo";
+                    // ✨ 1. Extraemos los datos y cruzamos con la tabla ESTATUS
+                    string Query = @"SELECT u.id_Usuario, u.password_Usuario, e.nombre 
+                                     FROM usuarios u 
+                                     INNER JOIN estatus e ON u.id_Estatus = e.id_Estatus 
+                                     WHERE BINARY u.email_Usuario = @correo";
+
                     using (MySqlCommand cmd = new MySqlCommand(Query, conn))
                     {
                         cmd.Parameters.AddWithValue("@correo", request.Email);
@@ -45,11 +50,18 @@ namespace backend_CLARA.Controllers
                             {
                                 idUsuario = reader.GetInt32(0);
                                 dbPassword = reader.GetString(1);
+                                estatusUsuario = reader.GetString(2);
                             }
                         }
                     }
 
-                    // ✨ 2. Si el usuario existe, evaluamos la contraseña
+                    // ✨ NUEVO BLOQUEO: Si el estatus es inactivo, lo sacamos de inmediato
+                    if (estatusUsuario == "Inactivo" || estatusUsuario == "INACTIVO" || estatusUsuario == "inactivo")
+                    {
+                        return Unauthorized(new { error = "Tu cuenta se encuentra inactiva. Contacta al administrador." });
+                    }
+
+                    // ✨ 2. Si el usuario existe y está activo, evaluamos la contraseña
                     if (idUsuario != null && dbPassword != null)
                     {
                         bool isValid = false;

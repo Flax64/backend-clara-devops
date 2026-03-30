@@ -176,7 +176,7 @@ namespace backend_CLARA.Controllers
         }
 
         // =======================================================
-        // GET: SABER EL ROL Y LOS PERMISOS DEL USUARIO
+        // GET: SABER EL ROL, PERMISOS Y NOMBRE DEL USUARIO
         // =======================================================
         [HttpGet("rol/{correo}")]
         public IActionResult ObtenerRolUsuario(string correo)
@@ -187,23 +187,31 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
                     string rolName = "";
+                    string nombreCompleto = "";
                     List<string> permisosList = new List<string>();
 
-                    // 1. Obtener el Rol
-                    string queryRol = @"SELECT r.nombre FROM USUARIOS u 
+                    // ✨ 1. Obtenemos el Rol y el Nombre del usuario al mismo tiempo
+                    string queryRol = @"SELECT r.nombre, u.nombre_Usuario, u.apellido_P 
+                                        FROM USUARIOS u 
                                         INNER JOIN ROLES r ON u.id_Rol = r.id_Rol 
                                         WHERE u.email_Usuario = @correo LIMIT 1";
 
                     using (MySqlCommand cmd = new MySqlCommand(queryRol, conn))
                     {
                         cmd.Parameters.AddWithValue("@correo", correo);
-                        var result = cmd.ExecuteScalar();
-                        if (result != null) rolName = result.ToString();
+                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        {
+                            if (reader.Read())
+                            {
+                                rolName = reader.GetString(0);
+                                nombreCompleto = $"{reader.GetString(1)} {reader.GetString(2)}";
+                            }
+                        }
                     }
 
                     if (string.IsNullOrEmpty(rolName)) return NotFound(new { error = "Usuario no encontrado" });
 
-                    // 2. Obtener la lista de Permisos dinámicos cruzando las 3 tablas
+                    // 2. Obtener la lista de Permisos dinámicos
                     string queryPermisos = @"SELECT p.nombre FROM USUARIOS u 
                                              INNER JOIN PERMISOS_has_ROLES phr ON u.id_Rol = phr.id_Rol 
                                              INNER JOIN PERMISOS p ON phr.id_Permiso = p.id_Permiso 
@@ -221,7 +229,8 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    return Ok(new { rol = rolName, permisos = permisosList });
+                    // ✨ 3. Devolvemos todo empaquetado
+                    return Ok(new { rol = rolName, permisos = permisosList, nombre = nombreCompleto });
                 }
             }
             catch (Exception ex)
