@@ -546,5 +546,70 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex) { return StatusCode(500, new { error = "Error al buscar médico: " + ex.Message }); }
         }
+
+        // --- NUEVO: DETECTOR DE CITAS HUÉRFANAS ---
+        [HttpGet("validar-huerfanas")]
+        public IActionResult ValidarCitasHuerfanas()
+        {
+            try
+            {
+                List<string> alertas = new List<string>();
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+
+                    // 1. Buscamos citas que ya NO tienen un horario válido
+                    string query = @"
+                        SELECT c.id_Cita, CONCAT(up.nombre_Usuario, ' ', up.apellido_P) AS Paciente, 
+                               TIME_FORMAT(c.hora_Cita, '%h:%i %p') AS Hora, e.nombre AS Estado
+                        FROM CITAS c
+                        INNER JOIN ESTATUS e ON c.id_Estatus = e.id_Estatus
+                        INNER JOIN PACIENTES p ON c.id_Paciente = p.id_Paciente
+                        INNER JOIN USUARIOS up ON p.id_Usuario = up.id_Usuario
+                        WHERE e.nombre IN ('Pendiente', 'Confirmada')
+                        AND NOT EXISTS (
+                            SELECT 1 FROM HORARIOS h
+                            WHERE h.id_Medico = c.id_Medico
+                            AND h.id_Dia = DAYOFWEEK(c.fecha_Cita)
+                            AND c.hora_Cita >= h.hora_Entrada
+                            AND c.hora_Cita < h.hora_Salida
+                        )";
+
+                    var citasHuerfanas = new List<dynamic>();
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    using (MySqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            citasHuerfanas.Add(new
+                            {
+                                IdCita = reader.GetInt32(0),
+                                Paciente = reader.GetString(1),
+                                Hora = reader.GetString(2),
+                                Estado = reader.GetString(3)
+                            });
+                        }
+                    }
+
+                    // 2. Generamos alertas y pasamos las confirmadas a Pendiente
+                    foreach (var cita in citasHuerfanas)
+                    {
+                        alertas.Add($"La hora de la cita de {cita.Paciente} a las {cita.Hora} no está disponible, favor de editarla y reagendarla.");
+
+                        if (cita.Estado == "Confirmada")
+                        {
+                            string qUpdate = "UPDATE CITAS SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Pendiente') WHERE id_Cita = @id";
+                            using (MySqlCommand cmdUpd = new MySqlCommand(qUpdate, conn))
+                            {
+                                cmdUpd.Parameters.AddWithValue("@id", cita.IdCita);
+                                cmdUpd.ExecuteNonQuery();
+                            }
+                        }
+                    }
+                }
+                return Ok(new { alertas });
+            }
+            catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+        }
     }
 }

@@ -22,7 +22,6 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ✨ 1. Agregamos e.nombre AS Estatus y el INNER JOIN ESTATUS
                     string query = @"
                         SELECT 
                             u.id_Usuario, u.nombre_Usuario, u.apellido_P, u.apellido_M, 
@@ -56,7 +55,7 @@ namespace backend_CLARA.Controllers
                                 Genero = reader.GetString(8),
                                 CedulaProfesional = reader.IsDBNull(9) ? "" : reader.GetString(9),
                                 Especialidad = reader.IsDBNull(10) ? "" : reader.GetString(10),
-                                Estatus = reader.GetString(11) // ✨ 2. Leemos la nueva columna
+                                Estatus = reader.GetString(11)
                             });
                         }
                     }
@@ -79,7 +78,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ 1. VERIFICAMOS SI EL CORREO YA EXISTE Y QUÉ ROL TIENE
+                    // 1. VERIFICAMOS SI EL CORREO YA EXISTE Y QUÉ ROL TIENE
                     string checkQuery = @"
                         SELECT u.id_Usuario, r.nombre 
                         FROM USUARIOS u 
@@ -96,7 +95,6 @@ namespace backend_CLARA.Controllers
                                 int idExistente = reader.GetInt32(0);
                                 string rolExistente = reader.GetString(1);
 
-                                // Si el correo existe y es de un paciente... (Mandamos código 409)
                                 if (rolExistente == "Paciente")
                                 {
                                     return StatusCode(409, new
@@ -105,7 +103,7 @@ namespace backend_CLARA.Controllers
                                         error = "Este correo ya pertenece a un paciente registrado en el sistema.\n\n¿Deseas actualizar sus datos y convertirlo en empleado?"
                                     });
                                 }
-                                else // Si existe y es cualquier otro rol (Mandamos código 400)
+                                else
                                 {
                                     return BadRequest(new { error = "Este correo ya está en uso por otro empleado y no está disponible." });
                                 }
@@ -132,10 +130,8 @@ namespace backend_CLARA.Controllers
                         cmd.Parameters.AddWithValue("@fechaNac", request.FechaNacimiento);
                         cmd.ExecuteNonQuery();
 
-                        // Obtenemos el ID del usuario recién creado
                         long idNuevoUsuario = cmd.LastInsertedId;
 
-                        // Si nos mandaron cédula, significa que es Médico, así que lo guardamos en su tabla
                         if (!string.IsNullOrEmpty(request.CedulaProfesional) && !string.IsNullOrEmpty(request.Especialidad))
                         {
                             string queryMedico = "INSERT INTO MEDICOS (id_Usuario, cedula_Profesional, especialidad) VALUES (@idUsu, @cedula, @especialidad)";
@@ -167,7 +163,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // 1. VALIDACIÓN DE CORREO: Revisar que el nuevo correo no lo tenga OTRO usuario
+                    // 1. VALIDACIÓN DE CORREO
                     string checkEmailQuery = "SELECT COUNT(*) FROM USUARIOS WHERE email_Usuario = @email AND id_Usuario != @id";
                     using (MySqlCommand checkCmd = new MySqlCommand(checkEmailQuery, conn))
                     {
@@ -180,13 +176,11 @@ namespace backend_CLARA.Controllers
                     }
 
                     // 2. ACTUALIZAR DATOS PRINCIPALES
-                    // Quitamos el password de la consulta base
                     string queryUpdate = @"UPDATE USUARIOS SET 
                         id_Estatus = @idEstatus, id_Genero = @idGenero, id_Rol = @idRol, 
                         nombre_Usuario = @nombre, apellido_P = @apPaterno, apellido_M = @apMaterno, 
                         email_Usuario = @email, telefono = @telefono, fecha_Nacimiento = @fechaNac ";
 
-                    // Si el administrador escribió una contraseña nueva, la agregamos a la instrucción SQL
                     if (!string.IsNullOrWhiteSpace(request.Password))
                     {
                         queryUpdate += ", password_Usuario = @password ";
@@ -207,7 +201,6 @@ namespace backend_CLARA.Controllers
                         cmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         cmd.Parameters.AddWithValue("@fechaNac", request.FechaNacimiento);
 
-                        // Si escribió contraseña, agregamos también el parámetro
                         if (!string.IsNullOrWhiteSpace(request.Password))
                         {
                             cmd.Parameters.AddWithValue("@password", request.Password);
@@ -216,19 +209,18 @@ namespace backend_CLARA.Controllers
                         cmd.ExecuteNonQuery();
                     }
 
-                    // 3. LIMPIEZA DE PACIENTES (Por si estamos convirtiendo un paciente a empleado)
+                    // 3. LIMPIEZA DE PACIENTES
                     string queryBorrarPaciente = "DELETE FROM PACIENTES WHERE id_Usuario = @id";
                     using (MySqlCommand cmdBorrarPac = new MySqlCommand(queryBorrarPaciente, conn))
                     {
                         cmdBorrarPac.Parameters.AddWithValue("@id", id);
                         try { cmdBorrarPac.ExecuteNonQuery(); }
-                        catch (MySqlException ex) { if (ex.Number != 1451) throw; } // Ignoramos si tiene citas pasadas
+                        catch (MySqlException ex) { if (ex.Number != 1451) throw; }
                     }
 
-                    // ✨ 4. GESTIÓN DEL MÉDICO (Ascenso, actualización o remoción)
+                    // ✨ 4. GESTIÓN DEL MÉDICO (Ascenso, actualización o remoción inteligente)
                     if (!string.IsNullOrWhiteSpace(request.CedulaProfesional) && !string.IsNullOrWhiteSpace(request.Especialidad))
                     {
-                        // 4.1 Primero verificamos si ya existe como médico
                         string checkMedicoQuery = "SELECT COUNT(*) FROM MEDICOS WHERE id_Usuario = @id";
                         int existeMedico = 0;
                         using (MySqlCommand cmdCheck = new MySqlCommand(checkMedicoQuery, conn))
@@ -237,7 +229,6 @@ namespace backend_CLARA.Controllers
                             existeMedico = Convert.ToInt32(cmdCheck.ExecuteScalar());
                         }
 
-                        // 4.2 Si existe, hacemos UPDATE tradicional
                         if (existeMedico > 0)
                         {
                             string queryUpdateMed = "UPDATE MEDICOS SET cedula_Profesional = @cedula, especialidad = @esp WHERE id_Usuario = @id";
@@ -249,7 +240,6 @@ namespace backend_CLARA.Controllers
                                 cmdUpdMed.ExecuteNonQuery();
                             }
                         }
-                        // 4.3 Si no existe (lo acaban de ascender a Médico), hacemos INSERT
                         else
                         {
                             string queryInsertMed = "INSERT INTO MEDICOS (id_Usuario, cedula_Profesional, especialidad) VALUES (@id, @cedula, @esp)";
@@ -264,17 +254,57 @@ namespace backend_CLARA.Controllers
                     }
                     else
                     {
-                        // Si viene sin cédula (le cambiaron el rol a Administrador/Cajero), lo borramos de los médicos
-                        string queryBorrarMedico = "DELETE FROM MEDICOS WHERE id_Usuario = @id";
-                        using (MySqlCommand cmdDelMed = new MySqlCommand(queryBorrarMedico, conn))
+                        // ✨ 4.4 AQUÍ OCURRE LA MAGIA: Si le cambiaron el rol y ya no es médico
+                        int idMedicoTemp = 0;
+                        using (var cmdBusca = new MySqlCommand("SELECT id_Medico FROM MEDICOS WHERE id_Usuario = @id", conn))
                         {
-                            cmdDelMed.Parameters.AddWithValue("@id", id);
-                            try { cmdDelMed.ExecuteNonQuery(); }
-                            catch (MySqlException ex) { if (ex.Number != 1451) throw; }
+                            cmdBusca.Parameters.AddWithValue("@id", id);
+                            var res = cmdBusca.ExecuteScalar();
+                            if (res != null) idMedicoTemp = Convert.ToInt32(res);
+                        }
+
+                        if (idMedicoTemp > 0)
+                        {
+                            // A. Borramos todos sus horarios
+                            using (var cmdDelHor = new MySqlCommand("DELETE FROM HORARIOS WHERE id_Medico = @idMed", conn))
+                            {
+                                cmdDelHor.Parameters.AddWithValue("@idMed", idMedicoTemp);
+                                cmdDelHor.ExecuteNonQuery();
+                            }
+
+                            // B. Cancelamos sus citas futuras/pendientes
+                            string qCancelarCitas = @"
+                                UPDATE CITAS 
+                                SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Cancelada' LIMIT 1)
+                                WHERE id_Medico = @idMed AND id_Estatus IN (SELECT id_Estatus FROM ESTATUS WHERE nombre IN ('Pendiente', 'Confirmada'))";
+
+                            using (var cmdCancCitas = new MySqlCommand(qCancelarCitas, conn))
+                            {
+                                cmdCancCitas.Parameters.AddWithValue("@idMed", idMedicoTemp);
+                                cmdCancCitas.ExecuteNonQuery();
+                            }
+
+                            // C. Intentamos borrar el registro de MEDICOS
+                            string queryBorrarMedico = "DELETE FROM MEDICOS WHERE id_Usuario = @id";
+                            using (MySqlCommand cmdDelMed = new MySqlCommand(queryBorrarMedico, conn))
+                            {
+                                cmdDelMed.Parameters.AddWithValue("@id", id);
+                                try
+                                {
+                                    cmdDelMed.ExecuteNonQuery();
+                                }
+                                catch (MySqlException ex)
+                                {
+                                    // Si da error 1451 (Tiene citas pasadas completadas o consultas), lo tragamos en silencio.
+                                    // El usuario ya cambió de rol, por lo que no aparecerá en los combos de creación de citas,
+                                    // pero su ID de médico sobrevive para no corromper la base de datos histórica.
+                                    if (ex.Number != 1451) throw;
+                                }
+                            }
                         }
                     }
                 }
-                return Ok(new { message = "Empleado actualizado exitosamente." });
+                return Ok(new { message = "Empleado actualizado exitosamente. (Si se le removió el puesto de médico, sus horarios fueron borrados y citas futuras canceladas)." });
             }
             catch (Exception ex)
             {
@@ -292,7 +322,6 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ EN LUGAR DE BORRAR, ACTUALIZAMOS SU ESTATUS A "INACTIVO"
                     string queryBaja = @"
                         UPDATE USUARIOS 
                         SET id_Estatus = (SELECT id_Estatus FROM ESTATUS WHERE nombre = 'Inactivo' LIMIT 1) 
@@ -326,14 +355,12 @@ namespace backend_CLARA.Controllers
         {
             try
             {
-                // ✨ Instanciamos tu nuevo modelo de respuesta
                 CatalogosResponse respuesta = new CatalogosResponse();
 
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
 
-                    // 1. Obtenemos Roles (Ignorando al 'Paciente')
                     using (var cmd = new MySqlCommand("SELECT id_Rol, nombre FROM ROLES WHERE nombre != 'Paciente'", conn))
                     using (var reader = cmd.ExecuteReader())
                     {
@@ -347,7 +374,6 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 2. Obtenemos Géneros
                     using (var cmd = new MySqlCommand("SELECT id_Genero, nombre FROM GENEROS", conn))
                     using (var reader = cmd.ExecuteReader())
                     {
@@ -361,7 +387,6 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // 3. Obtenemos Estatus (Solo Activo e Inactivo)
                     string queryEstatus = "SELECT id_Estatus, nombre FROM ESTATUS WHERE nombre IN ('Activo', 'Inactivo')";
                     using (var cmd = new MySqlCommand(queryEstatus, conn))
                     using (var reader = cmd.ExecuteReader())
@@ -376,8 +401,6 @@ namespace backend_CLARA.Controllers
                         }
                     }
                 }
-
-                // Devolvemos el modelo fuertemente tipado
                 return Ok(respuesta);
             }
             catch (Exception ex)
