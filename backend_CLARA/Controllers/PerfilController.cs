@@ -174,5 +174,60 @@ namespace backend_CLARA.Controllers
                 return StatusCode(500, new { error = "Error interno del servidor. Detalles: " + ex.Message });
             }
         }
+
+        // =======================================================
+        // GET: SABER EL ROL Y LOS PERMISOS DEL USUARIO
+        // =======================================================
+        [HttpGet("rol/{correo}")]
+        public IActionResult ObtenerRolUsuario(string correo)
+        {
+            try
+            {
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string rolName = "";
+                    List<string> permisosList = new List<string>();
+
+                    // 1. Obtener el Rol
+                    string queryRol = @"SELECT r.nombre FROM USUARIOS u 
+                                        INNER JOIN ROLES r ON u.id_Rol = r.id_Rol 
+                                        WHERE u.email_Usuario = @correo LIMIT 1";
+
+                    using (MySqlCommand cmd = new MySqlCommand(queryRol, conn))
+                    {
+                        cmd.Parameters.AddWithValue("@correo", correo);
+                        var result = cmd.ExecuteScalar();
+                        if (result != null) rolName = result.ToString();
+                    }
+
+                    if (string.IsNullOrEmpty(rolName)) return NotFound(new { error = "Usuario no encontrado" });
+
+                    // 2. Obtener la lista de Permisos dinámicos cruzando las 3 tablas
+                    string queryPermisos = @"SELECT p.nombre FROM USUARIOS u 
+                                             INNER JOIN PERMISOS_has_ROLES phr ON u.id_Rol = phr.id_Rol 
+                                             INNER JOIN PERMISOS p ON phr.id_Permiso = p.id_Permiso 
+                                             WHERE u.email_Usuario = @correo";
+
+                    using (MySqlCommand cmdP = new MySqlCommand(queryPermisos, conn))
+                    {
+                        cmdP.Parameters.AddWithValue("@correo", correo);
+                        using (MySqlDataReader reader = cmdP.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                permisosList.Add(reader.GetString(0));
+                            }
+                        }
+                    }
+
+                    return Ok(new { rol = rolName, permisos = permisosList });
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "Error al obtener permisos. Detalles: " + ex.Message });
+            }
+        }
     }
 }

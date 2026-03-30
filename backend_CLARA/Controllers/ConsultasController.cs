@@ -77,11 +77,9 @@ namespace backend_CLARA.Controllers
                     conn.Open();
 
                     // ✨ CAMBIO DE FORMATO: 
-                    // 1. Usamos ' (' y ')' en el CONCAT.
-                    // 2. Sumamos + 0 al valor para que MySQL quite los ".00" innecesarios automáticamente.
                     string query = @"
                         SELECT m.id_Medicamento, 
-                               CONCAT(m.nombre_Medicamento, ' (', (m.concentracion_Valor + 0), m.concentracion_Unidad, ')') AS NombreCompleto
+                               CONCAT(m.nombre_Medicamento, ' (', CAST(m.concentracion_Valor AS UNSIGNED), m.concentracion_Unidad, ')') AS NombreCompleto
                         FROM MEDICAMENTOS m
                         INNER JOIN ESTATUS e ON m.id_Estatus = e.id_Estatus
                         WHERE e.nombre = 'Activo' AND m.stock_Medicamento > 0";
