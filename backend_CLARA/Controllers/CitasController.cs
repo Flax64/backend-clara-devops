@@ -25,6 +25,15 @@ namespace backend_CLARA.Controllers
                     string rolUsuario = "";
                     int idUsuarioLogeado = 0;
 
+                    string autoCancelarQuery = @"
+                        UPDATE citas SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Cancelada' LIMIT 1)
+                        WHERE fecha_Cita < CURDATE() AND id_Estatus IN(SELECT id_Estatus 
+                        FROM estatus WHERE nombre IN('Pendiente', 'Confirmada'))";
+                    using (MySqlCommand cmdAutoCancelar = new MySqlCommand(autoCancelarQuery, conn))
+                    {
+                        cmdAutoCancelar.ExecuteNonQuery();
+                    }
+
                     if (!string.IsNullOrEmpty(correo))
                     {
                         string rolQuery = @"SELECT r.nombre, u.id_Usuario 
