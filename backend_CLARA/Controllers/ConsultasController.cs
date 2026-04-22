@@ -77,7 +77,7 @@ namespace backend_CLARA.Controllers
                                CONCAT(m.nombre_Medicamento, ' (', CAST(m.concentracion_Valor AS UNSIGNED), m.concentracion_Unidad, ')') AS NombreCompleto
                         FROM medicamentos m
                         INNER JOIN estatus e ON m.id_Estatus = e.id_Estatus
-                        WHERE e.nombre = 'Activo' AND m.stock_Medicamento > 0";
+                        WHERE e.nombre = 'Activo'";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
