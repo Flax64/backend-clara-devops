@@ -1,8 +1,11 @@
 ﻿using backend_CLARA.Models;
 using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
+using Mysqlx.Crud;
 using System;
 using System.Collections.Generic;
+using System.Net.NetworkInformation;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace backend_CLARA.Controllers
 {
@@ -37,9 +40,9 @@ namespace backend_CLARA.Controllers
                     if (!string.IsNullOrEmpty(correo))
                     {
                         string rolQuery = @"SELECT r.nombre, u.id_Usuario 
-                                            FROM usuarios u 
-                                            INNER JOIN roles r ON u.id_Rol = r.id_Rol 
-                                            WHERE u.email_Usuario = @correo LIMIT 1";
+                                      FROM usuarios u 
+                                      INNER JOIN roles r ON u.id_Rol = r.id_Rol 
+                                      WHERE u.email_Usuario = @correo LIMIT 1";
                         using (MySqlCommand cmdRol = new MySqlCommand(rolQuery, conn))
                         {
                             cmdRol.Parameters.AddWithValue("@correo", correo);
@@ -52,9 +55,8 @@ namespace backend_CLARA.Controllers
                                 }
                             }
                         }
-                    }
 
-                    string query = @"
+                        string query = @"
                         SELECT 
                             c.id_Cita, 
                             CONCAT(up.nombre_Usuario, ' ', up.apellido_P) AS Paciente,
@@ -70,42 +72,43 @@ namespace backend_CLARA.Controllers
                         INNER JOIN usuarios um ON m.id_Usuario = um.id_Usuario
                         WHERE 1=1 ";
 
-                    if (rolUsuario == "Paciente")
-                    {
-                        query += " AND up.id_Usuario = @idUsuarioLogeado ";
-                    }
-                    else if (rolUsuario == "Médico" || rolUsuario == "Medico")
-                    {
-                        query += " AND um.id_Usuario = @idUsuarioLogeado ";
-                    }
-
-                    query += " ORDER BY c.fecha_Cita DESC, c.hora_Cita DESC";
-
-                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
-                    {
-                        if (rolUsuario == "Paciente" || rolUsuario == "Médico" || rolUsuario == "Medico")
+                        if (rolUsuario == "Paciente")
                         {
-                            cmd.Parameters.AddWithValue("@idUsuarioLogeado", idUsuarioLogeado);
+                            query += " AND up.id_Usuario = @idUsuarioLogeado ";
+                        }
+                        else if (rolUsuario == "Médico" || rolUsuario == "Medico")
+                        {
+                            query += " AND um.id_Usuario = @idUsuarioLogeado ";
                         }
 
-                        using (MySqlDataReader reader = cmd.ExecuteReader())
+                        query += " ORDER BY c.fecha_Cita DESC, c.hora_Cita DESC";
+
+                        using (MySqlCommand cmd = new MySqlCommand(query, conn))
                         {
-                            while (reader.Read())
+                            if (rolUsuario == "Paciente" || rolUsuario == "Médico" || rolUsuario == "Medico")
                             {
-                                citas.Add(new CitaRead
+                                cmd.Parameters.AddWithValue("@idUsuarioLogeado", idUsuarioLogeado);
+                            }
+
+                            using (MySqlDataReader reader = cmd.ExecuteReader())
+                            {
+                                while (reader.Read())
                                 {
-                                    IdCita = reader.GetInt32(0),
-                                    Paciente = reader.GetString(1),
-                                    Medico = reader.GetString(2),
-                                    Fecha = reader.GetString(3),
-                                    Hora = reader.GetString(4),
-                                    Estado = reader.GetString(5)
-                                });
+                                    citas.Add(new CitaRead
+                                    {
+                                        IdCita = reader.GetInt32(0),
+                                        Paciente = reader.GetString(1),
+                                        Medico = reader.GetString(2),
+                                        Fecha = reader.GetString(3),
+                                        Hora = reader.GetString(4),
+                                        Estado = reader.GetString(5)
+                                    });
+                                }
                             }
                         }
                     }
+                    return Ok(citas);
                 }
-                return Ok(citas);
             }
             catch (Exception ex)
             {
@@ -322,7 +325,7 @@ namespace backend_CLARA.Controllers
                 AND fecha_Cita = @fecha 
                 AND hora_Cita = @hora 
                 AND id_Cita != @idCita
-                AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada'))";
+                AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada', 'Completada'))";
 
             using (MySqlCommand cmd = new MySqlCommand(choqueQuery, conn))
             {
@@ -482,7 +485,7 @@ namespace backend_CLARA.Controllers
                     string queryOcupadas = @"
                         SELECT TIME_FORMAT(hora_Cita, '%H:%i') 
                         FROM citas 
-                        WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada'))";
+                        WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada', 'Completada'))";
 
                     if (idCita.HasValue && idCita.Value > 0)
                     {
@@ -535,7 +538,7 @@ namespace backend_CLARA.Controllers
                           AND m.id_Medico NOT IN (
                               SELECT id_Medico FROM citas 
                               WHERE fecha_Cita = @fecha AND hora_Cita = @hora AND id_Cita != @idCita
-                              AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada'))
+                              AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada', 'Completada'))
                           )
                         LIMIT 1";
 
