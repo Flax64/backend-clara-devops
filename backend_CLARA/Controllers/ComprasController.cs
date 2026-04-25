@@ -89,6 +89,7 @@ namespace backend_CLARA.Controllers
                                 cmdD.Parameters.AddWithValue("@idC", idC);
                                 cmdD.Parameters.AddWithValue("@idM", det.IdMedicamento);
                                 cmdD.Parameters.AddWithValue("@cant", det.Cantidad);
+                                cmdD.Parameters.AddWithValue("@precio", det.PrecioUnitario);
                                 cmdD.ExecuteNonQuery();
                             }
 
@@ -197,10 +198,10 @@ namespace backend_CLARA.Controllers
                     if (cabecera == null) return NotFound();
 
                     var detalles = new List<object>();
-                    string sqlD = @"SELECT d.id_Medicamento, m.nombre_Medicamento, d.cantidad, m.precio_Medicamento 
-                                    FROM detalle_compra d 
-                                    INNER JOIN medicamentos m ON d.id_Medicamento = m.id_Medicamento 
-                                    WHERE d.id_Compra = @id";
+                    string sqlD = @"SELECT d.id_Medicamento, m.nombre_Medicamento, d.cantidad, d.precio_unitario 
+                            FROM detalle_compra d 
+                            INNER JOIN medicamentos m ON d.id_Medicamento = m.id_Medicamento 
+                            WHERE d.id_Compra = @id";
 
                     using (var cmdD = new MySqlCommand(sqlD, conn))
                     {
@@ -214,7 +215,7 @@ namespace backend_CLARA.Controllers
                                     idProducto = rD["id_Medicamento"],
                                     producto = rD["nombre_Medicamento"],
                                     cant = rD["cantidad"],
-                                    p_Unit = rD["precio_Medicamento"]
+                                    p_Unit = rD["precio_unitario"]
                                 });
                             }
                         }
@@ -272,8 +273,11 @@ namespace backend_CLARA.Controllers
                         {
                             using (var cmdIns = new MySqlCommand("INSERT INTO detalle_compra (id_Compra, id_Medicamento, cantidad) VALUES (@id, @m, @c)", conn, trans))
                             {
-                                cmdIns.Parameters.AddWithValue("@id", id); cmdIns.Parameters.AddWithValue("@m", det.IdMedicamento);
-                                cmdIns.Parameters.AddWithValue("@c", det.Cantidad); cmdIns.ExecuteNonQuery();
+                                cmdIns.Parameters.AddWithValue("@id", id); 
+                                cmdIns.Parameters.AddWithValue("@m", det.IdMedicamento);
+                                cmdIns.Parameters.AddWithValue("@c", det.Cantidad);
+                                cmdIns.Parameters.AddWithValue("@p", det.PrecioUnitario);
+                                cmdIns.ExecuteNonQuery();
                             }
                             using (var cmdStock = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento + @c WHERE id_Medicamento = @m", conn, trans))
                             {
