@@ -435,25 +435,25 @@ namespace backend_CLARA.Controllers
         }
 
         [HttpGet("horas-disponibles")]
-        public IActionResult GetHorasDisponibles([FromQuery] string fecha, [FromQuery] int? idCita = null)
+        public IActionResult GetHorasDisponibles([FromQuery] string fecha, [FromQuery] int idMedico, [FromQuery] int? idCita = null)
         {
             try
             {
                 DateTime fechaSeleccionada = DateTime.Parse(fecha);
                 int diaSemana = (int)fechaSeleccionada.DayOfWeek + 1;
-
                 List<string> horasGeneradas = new List<string>();
 
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-
-                    string queryHorarios = "SELECT hora_Entrada, hora_Salida FROM horarios WHERE id_Dia = @dia";
+                    // ✨ Filtramos por médico
+                    string queryHorarios = "SELECT hora_Entrada, hora_Salida FROM horarios WHERE id_Dia = @dia AND id_Medico = @medico";
                     List<Tuple<TimeSpan, TimeSpan>> rangosMedicos = new List<Tuple<TimeSpan, TimeSpan>>();
 
                     using (MySqlCommand cmdHorarios = new MySqlCommand(queryHorarios, conn))
                     {
                         cmdHorarios.Parameters.AddWithValue("@dia", diaSemana);
+                        cmdHorarios.Parameters.AddWithValue("@medico", idMedico);
                         using (MySqlDataReader reader = cmdHorarios.ExecuteReader())
                         {
                             while (reader.Read())
@@ -468,33 +468,29 @@ namespace backend_CLARA.Controllers
                     foreach (var rango in rangosMedicos)
                     {
                         TimeSpan horaIteracion = rango.Item1;
-
                         while (horaIteracion.Add(TimeSpan.FromMinutes(15)) <= rango.Item2)
                         {
                             string horaString = horaIteracion.ToString(@"hh\:mm");
-                            if (!horasGeneradas.Contains(horaString))
-                            {
-                                horasGeneradas.Add(horaString);
-                            }
+                            if (!horasGeneradas.Contains(horaString)) horasGeneradas.Add(horaString);
                             horaIteracion = horaIteracion.Add(TimeSpan.FromMinutes(15));
                         }
                     }
 
                     horasGeneradas.Sort();
 
+                    // ✨ Chocamos colisiones solo para el médico seleccionado
                     string queryOcupadas = @"
                         SELECT TIME_FORMAT(hora_Cita, '%H:%i') 
                         FROM citas 
-                        WHERE fecha_Cita = @fecha AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada', 'Completada'))";
+                        WHERE fecha_Cita = @fecha AND id_Medico = @medico 
+                        AND id_Estatus IN (SELECT id_Estatus FROM estatus WHERE nombre IN ('Pendiente', 'Confirmada', 'Completada'))";
 
-                    if (idCita.HasValue && idCita.Value > 0)
-                    {
-                        queryOcupadas += " AND id_Cita != @idCita";
-                    }
+                    if (idCita.HasValue && idCita.Value > 0) queryOcupadas += " AND id_Cita != @idCita";
 
                     using (MySqlCommand cmdOcupadas = new MySqlCommand(queryOcupadas, conn))
                     {
                         cmdOcupadas.Parameters.AddWithValue("@fecha", fechaSeleccionada.ToString("yyyy-MM-dd"));
+                        cmdOcupadas.Parameters.AddWithValue("@medico", idMedico);
                         if (idCita.HasValue && idCita.Value > 0) cmdOcupadas.Parameters.AddWithValue("@idCita", idCita.Value);
 
                         using (MySqlDataReader reader = cmdOcupadas.ExecuteReader())
@@ -507,7 +503,6 @@ namespace backend_CLARA.Controllers
                         }
                     }
                 }
-
                 return Ok(horasGeneradas);
             }
             catch (Exception ex)
@@ -620,6 +615,30 @@ namespace backend_CLARA.Controllers
                 return Ok(new { alertas });
             }
             catch (Exception ex) { return StatusCode(500, new { error = ex.Message }); }
+        }
+        [HttpGet("medicos")]
+        public IActionResult GetMedicosCombo()
+        {
+            try
+            {
+                var lista = new List<object>();
+                using (MySqlConnection conn = new MySqlConnection(_connectionString))
+                {
+                    conn.Open();
+                    string query = @"SELECT m.id_Medico, CONCAT('Dr. ', u.nombre_Usuario, ' ', u.apellido_P) AS Nombre 
+                                     FROM medicos m 
+                                     INNER JOIN usuarios u ON m.id_Usuario = u.id_Usuario 
+                                     WHERE u.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1)";
+
+                    using (MySqlCommand cmd = new MySqlCommand(query, conn))
+                    using (MySqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read()) { lista.Add(new { Id = reader.GetInt32(0), Nombre = reader.GetString(1).Trim() }); }
+                    }
+                }
+                return Ok(lista);
+            }
+            catch (Exception ex) { return StatusCode(500, new { error = "Error al obtener médicos: " + ex.Message }); }
         }
     }
 }
