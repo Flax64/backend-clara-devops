@@ -309,10 +309,17 @@ namespace backend_CLARA.Controllers
                     conn.Open();
 
                     string query = @"SELECT 
-                                        id_Medicamento, 
-                                        CONCAT(nombre_Medicamento, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM concentracion_Valor)), concentracion_Unidad, ')') AS nombreCompuesto, 
-                                        precio_Medicamento 
-                                     FROM medicamentos";
+                                        m.id_Medicamento, 
+                                        CONCAT(m.nombre_Medicamento, ' (', TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM m.concentracion_Valor)), m.concentracion_Unidad, ')') AS nombreCompuesto, 
+                                        COALESCE(
+                                            (SELECT d.precio_unitario 
+                                             FROM detalle_compra d 
+                                             INNER JOIN compras c ON d.id_Compra = c.id_Compra 
+                                             WHERE d.id_Medicamento = m.id_Medicamento 
+                                             ORDER BY c.fecha_Compra DESC, c.id_Compra DESC 
+                                             LIMIT 1), 
+                                        0.00) AS ultimo_costo 
+                                     FROM medicamentos m";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader r = cmd.ExecuteReader())
@@ -323,7 +330,7 @@ namespace backend_CLARA.Controllers
                             {
                                 Id = r["id_Medicamento"],
                                 Nombre = r["nombreCompuesto"].ToString(),
-                                Precio = r["precio_Medicamento"]
+                                Precio = r["ultimo_costo"]
                             });
                         }
                     }
