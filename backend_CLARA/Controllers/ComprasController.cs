@@ -84,7 +84,7 @@ namespace backend_CLARA.Controllers
 
                         foreach (var det in request.Detalles)
                         {
-                            using (var cmdD = new MySqlCommand("INSERT INTO detalle_compra (id_Compra, id_Medicamento, cantidad) VALUES (@idC, @idM, @cant)", conn, trans))
+                            using (var cmdD = new MySqlCommand("INSERT INTO detalle_compra (id_Compra, id_Medicamento, cantidad, precio_unitario) VALUES (@idC, @idM, @cant, @precio)", conn, trans))
                             {
                                 cmdD.Parameters.AddWithValue("@idC", idC);
                                 cmdD.Parameters.AddWithValue("@idM", det.IdMedicamento);
@@ -271,9 +271,9 @@ namespace backend_CLARA.Controllers
 
                         foreach (var det in request.Detalles)
                         {
-                            using (var cmdIns = new MySqlCommand("INSERT INTO detalle_compra (id_Compra, id_Medicamento, cantidad) VALUES (@id, @m, @c)", conn, trans))
+                            using (var cmdIns = new MySqlCommand("INSERT INTO detalle_compra (id_Compra, id_Medicamento, cantidad, precio_unitario) VALUES (@id, @m, @c, @p)", conn, trans))
                             {
-                                cmdIns.Parameters.AddWithValue("@id", id); 
+                                cmdIns.Parameters.AddWithValue("@id", id);
                                 cmdIns.Parameters.AddWithValue("@m", det.IdMedicamento);
                                 cmdIns.Parameters.AddWithValue("@c", det.Cantidad);
                                 cmdIns.Parameters.AddWithValue("@p", det.PrecioUnitario);
