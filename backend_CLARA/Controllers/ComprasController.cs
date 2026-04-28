@@ -113,69 +113,6 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        [HttpDelete("{id}")]
-        public IActionResult Eliminar(int id)
-        {
-            using (MySqlConnection conn = new MySqlConnection(_connectionString))
-            {
-                conn.Open();
-                using (var trans = conn.BeginTransaction())
-                {
-                    try
-                    {
-                        int estatusActual = 0;
-                        using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM compras WHERE id_Compra = @id", conn, trans))
-                        {
-                            cmdCheck.Parameters.AddWithValue("@id", id);
-                            var result = cmdCheck.ExecuteScalar();
-                            if (result == null) return NotFound("La compra no existe.");
-                            estatusActual = Convert.ToInt32(result);
-                        }
-
-                        int idEstatusCancelada = 4;
-
-                        if (estatusActual == idEstatusCancelada)
-                            return BadRequest("Esta compra ya se encuentra cancelada.");
-
-                        var viejos = new List<dynamic>();
-                        using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM detalle_compra WHERE id_Compra = @id", conn, trans))
-                        {
-                            cmd.Parameters.AddWithValue("@id", id);
-                            using (var r = cmd.ExecuteReader())
-                            {
-                                while (r.Read()) viejos.Add(new { idM = r.GetInt32(0), cant = r.GetInt32(1) });
-                            }
-                        }
-
-                        foreach (var v in viejos)
-                        {
-                            using (var cmdUp = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
-                            {
-                                cmdUp.Parameters.AddWithValue("@c", v.cant);
-                                cmdUp.Parameters.AddWithValue("@m", v.idM);
-                                cmdUp.ExecuteNonQuery();
-                            }
-                        }
-
-                        using (var cmdCancel = new MySqlCommand("UPDATE compras SET id_Estatus = @estatus WHERE id_Compra = @id", conn, trans))
-                        {
-                            cmdCancel.Parameters.AddWithValue("@estatus", idEstatusCancelada);
-                            cmdCancel.Parameters.AddWithValue("@id", id);
-                            cmdCancel.ExecuteNonQuery();
-                        }
-
-                        trans.Commit();
-                        return Ok(new { message = "Compra cancelada y stock revertido" });
-                    }
-                    catch (Exception ex)
-                    {
-                        trans.Rollback();
-                        return StatusCode(500, new { error = "Ocurrió un problema al intentar cancelar la compra. Detalles: " + ex.Message });
-                    }
-                }
-            }
-        }
-
         [HttpGet("{id}")]
         public IActionResult ObtenerPorId(int id)
         {
@@ -239,6 +176,21 @@ namespace backend_CLARA.Controllers
                 {
                     try
                     {
+                        // REGLA 1: NO EDITAR DESPUÉS DE 1 DÍA
+                        using (var cmdFecha = new MySqlCommand("SELECT fecha_Compra FROM compras WHERE id_Compra = @id", conn, trans))
+                        {
+                            cmdFecha.Parameters.AddWithValue("@id", id);
+                            var resFecha = cmdFecha.ExecuteScalar();
+                            if (resFecha == null) return NotFound(new { error = "La compra no existe." });
+
+                            DateTime fechaCompra = Convert.ToDateTime(resFecha);
+                            if ((DateTime.Today - fechaCompra.Date).TotalDays > 1)
+                            {
+                                return BadRequest(new { error = "No se puede editar una compra después de 24 horas de haber sido registrada." });
+                            }
+                        }
+
+                        // Recuperar detalles viejos
                         var viejos = new List<dynamic>();
                         using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM detalle_compra WHERE id_Compra = @id", conn, trans))
                         {
@@ -248,11 +200,35 @@ namespace backend_CLARA.Controllers
                                 while (r.Read()) viejos.Add(new { idM = r.GetInt32(0), cant = r.GetInt32(1) });
                             }
                         }
+
+                        // REGLA 2: VALIDAR SI HAY STOCK SUFICIENTE ANTES DE REVERTIR
+                        foreach (var v in viejos)
+                        {
+                            using (var cmdVal = new MySqlCommand("SELECT stock_Medicamento, nombre_Medicamento FROM medicamentos WHERE id_Medicamento = @m", conn, trans))
+                            {
+                                cmdVal.Parameters.AddWithValue("@m", v.idM);
+                                using (var reader = cmdVal.ExecuteReader())
+                                {
+                                    if (reader.Read())
+                                    {
+                                        int stockActual = reader.GetInt32(0);
+                                        string nombreMed = reader.GetString(1);
+                                        if (stockActual < v.cant)
+                                        {
+                                            return BadRequest(new { error = $"No se puede editar la compra. El medicamento '{nombreMed}' ya fue vendido y no hay stock suficiente para revertir esta factura." });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Si pasó las validaciones, procedemos a revertir el stock normalmente
                         foreach (var v in viejos)
                         {
                             using (var cmdUp = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
                             {
-                                cmdUp.Parameters.AddWithValue("@c", v.cant); cmdUp.Parameters.AddWithValue("@m", v.idM);
+                                cmdUp.Parameters.AddWithValue("@c", v.cant);
+                                cmdUp.Parameters.AddWithValue("@m", v.idM);
                                 cmdUp.ExecuteNonQuery();
                             }
                         }
@@ -261,6 +237,7 @@ namespace backend_CLARA.Controllers
                         {
                             cmdDel.Parameters.AddWithValue("@id", id); cmdDel.ExecuteNonQuery();
                         }
+
                         using (var cmdUpC = new MySqlCommand("UPDATE compras SET id_Proveedor = @p, total_Compra = @t WHERE id_Compra = @id", conn, trans))
                         {
                             cmdUpC.Parameters.AddWithValue("@p", request.IdProveedor);
@@ -281,7 +258,8 @@ namespace backend_CLARA.Controllers
                             }
                             using (var cmdStock = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento + @c WHERE id_Medicamento = @m", conn, trans))
                             {
-                                cmdStock.Parameters.AddWithValue("@c", det.Cantidad); cmdStock.Parameters.AddWithValue("@m", det.IdMedicamento);
+                                cmdStock.Parameters.AddWithValue("@c", det.Cantidad);
+                                cmdStock.Parameters.AddWithValue("@m", det.IdMedicamento);
                                 cmdStock.ExecuteNonQuery();
                             }
                         }
@@ -293,6 +271,92 @@ namespace backend_CLARA.Controllers
                     {
                         trans.Rollback();
                         return StatusCode(500, new { error = "Ocurrió un problema al actualizar la compra. Detalles: " + ex.Message });
+                    }
+                }
+            }
+        }
+
+        [HttpDelete("{id}")]
+        public IActionResult Eliminar(int id)
+        {
+            using (MySqlConnection conn = new MySqlConnection(_connectionString))
+            {
+                conn.Open();
+                using (var trans = conn.BeginTransaction())
+                {
+                    try
+                    {
+                        int estatusActual = 0;
+                        using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM compras WHERE id_Compra = @id", conn, trans))
+                        {
+                            cmdCheck.Parameters.AddWithValue("@id", id);
+                            var result = cmdCheck.ExecuteScalar();
+                            if (result == null) return NotFound(new { error = "La compra no existe." });
+                            estatusActual = Convert.ToInt32(result);
+                        }
+
+                        int idEstatusCancelada = 4;
+                        if (estatusActual == idEstatusCancelada)
+                            return BadRequest(new { error = "Esta compra ya se encuentra cancelada." });
+
+                        // Obtener detalles de la compra a cancelar
+                        var viejos = new List<dynamic>();
+                        using (var cmd = new MySqlCommand("SELECT id_Medicamento, cantidad FROM detalle_compra WHERE id_Compra = @id", conn, trans))
+                        {
+                            cmd.Parameters.AddWithValue("@id", id);
+                            using (var r = cmd.ExecuteReader())
+                            {
+                                while (r.Read()) viejos.Add(new { idM = r.GetInt32(0), cant = r.GetInt32(1) });
+                            }
+                        }
+
+                        // ✨ REGLA 2: VALIDAR SI HAY STOCK SUFICIENTE ANTES DE CANCELAR LA COMPRA
+                        foreach (var v in viejos)
+                        {
+                            using (var cmdVal = new MySqlCommand("SELECT stock_Medicamento, nombre_Medicamento FROM medicamentos WHERE id_Medicamento = @m", conn, trans))
+                            {
+                                cmdVal.Parameters.AddWithValue("@m", v.idM);
+                                using (var reader = cmdVal.ExecuteReader())
+                                {
+                                    if (reader.Read())
+                                    {
+                                        int stockActual = reader.GetInt32(0);
+                                        string nombreMed = reader.GetString(1);
+                                        if (stockActual < v.cant)
+                                        {
+                                            return BadRequest(new { error = $"No se puede cancelar esta compra. El medicamento '{nombreMed}' ya fue vendido y su stock no puede quedar en negativo." });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Si pasó las validaciones, procedemos a descontar el stock
+                        foreach (var v in viejos)
+                        {
+                            using (var cmdUp = new MySqlCommand("UPDATE medicamentos SET stock_Medicamento = stock_Medicamento - @c WHERE id_Medicamento = @m", conn, trans))
+                            {
+                                cmdUp.Parameters.AddWithValue("@c", v.cant);
+                                cmdUp.Parameters.AddWithValue("@m", v.idM);
+                                cmdUp.ExecuteNonQuery();
+                            }
+                        }
+
+                        // Cambiar estatus a Cancelada
+                        using (var cmdCancel = new MySqlCommand("UPDATE compras SET id_Estatus = @estatus WHERE id_Compra = @id", conn, trans))
+                        {
+                            cmdCancel.Parameters.AddWithValue("@estatus", idEstatusCancelada);
+                            cmdCancel.Parameters.AddWithValue("@id", id);
+                            cmdCancel.ExecuteNonQuery();
+                        }
+
+                        trans.Commit();
+                        return Ok(new { message = "Compra cancelada y stock revertido" });
+                    }
+                    catch (Exception ex)
+                    {
+                        trans.Rollback();
+                        return StatusCode(500, new { error = "Ocurrió un problema al intentar cancelar la compra. Detalles: " + ex.Message });
                     }
                 }
             }
