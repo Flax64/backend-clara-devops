@@ -506,22 +506,30 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Traer a todos los pacientes y, si tienen receta reciente, anexa el ID (si no, pone 0)
+                    // ✨ MAGIA SQL (UNION): 
+                    // Parte 1: Busca a los pacientes con receta y les agrega la fecha al lado de su nombre.
+                    // Parte 2: Agrega a todos los pacientes normales con ID 0 para ventas libres.
                     string query = @"
                     SELECT 
+                        CONCAT(u.nombre_Usuario, ' ', u.apellido_P, ' (Receta: ', DATE_FORMAT(ci.fecha_Cita, '%d/%m/%Y'), ')') AS nombre_Paciente,
+                        c.id_Consulta AS id_Consulta
+                    FROM pacientes p
+                    INNER JOIN usuarios u ON p.id_Usuario = u.id_Usuario
+                    INNER JOIN citas ci ON p.id_Paciente = ci.id_Paciente
+                    INNER JOIN consultas c ON ci.id_Cita = c.id_Cita
+                    WHERE u.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1)
+                      AND c.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1) 
+                      AND ci.fecha_Cita >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+
+                    UNION
+
+                    SELECT 
                         CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Paciente,
-                        COALESCE((
-                            SELECT c.id_Consulta
-                            FROM consultas c
-                            INNER JOIN citas ci ON c.id_Cita = ci.id_Cita
-                            WHERE ci.id_Paciente = p.id_Paciente
-                              AND c.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1) 
-                              AND ci.fecha_Cita >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-                            ORDER BY c.id_Consulta DESC LIMIT 1
-                        ), 0) AS id_Consulta
+                        0 AS id_Consulta
                     FROM pacientes p
                     INNER JOIN usuarios u ON p.id_Usuario = u.id_Usuario
                     WHERE u.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1)
+                    
                     ORDER BY nombre_Paciente ASC";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
