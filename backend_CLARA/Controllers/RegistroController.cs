@@ -45,7 +45,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // ✨ 3. GENERAMOS EL HASH ANTES DE INSERTAR
+                    // 3. GENERAMOS EL HASH ANTES DE INSERTAR
                     string hashPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
                     string insertQuery = "INSERT INTO usuarios (id_Genero, id_Estatus,id_Rol, nombre_Usuario, apellido_P, apellido_M, email_Usuario, password_Usuario, telefono, fecha_Nacimiento) " +

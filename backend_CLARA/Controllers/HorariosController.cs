@@ -22,7 +22,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ✨ Cruzamos horarios con dias, medicos y usuarios para traer todo legible
+                    // Cruzamos horarios con dias, medicos y usuarios para traer todo legible
                     // Y le damos formato a las horas para que salgan como "08:00 AM" desde SQL
                     string query = @"
                         SELECT 
@@ -159,7 +159,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ 2. VALIDACIÓN ESTRICTA DE EMPALME GENERAL (Para cualquier médico)
+                    // 2. VALIDACIÓN ESTRICTA DE EMPALME GENERAL (Para cualquier médico)
                     // Buscamos si en ese mismo DÍA, existe algún horario cuyo rango choque con el nuevo
                     string queryEmpalme = @"
                         SELECT COUNT(*) FROM horarios 
@@ -250,7 +250,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ VALIDACIÓN: Choque de horarios ignorando el ID actual (@id)
+                    // VALIDACIÓN: Choque de horarios ignorando el ID actual (@id)
                     string queryEmpalme = @"
                         SELECT COUNT(*) FROM horarios 
                         WHERE id_Dia = @dia AND id_Horario != @id

@@ -77,7 +77,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ VALIDACIÓN BLINDADA: Ignora espacios extras y diferencias entre mayúsculas/minúsculas
+                    // VALIDACIÓN BLINDADA: Ignora espacios extras y diferencias entre mayúsculas/minúsculas
                     string checkQuery = @"
                         SELECT m.id_Medicamento, e.nombre AS estatusNombre 
                         FROM medicamentos m
@@ -164,7 +164,7 @@ namespace backend_CLARA.Controllers
                 {
                     conn.Open();
 
-                    // ✨ VALIDACIÓN BLINDADA: Ignora espacios en blanco extras y mayúsculas/minúsculas
+                    // VALIDACIÓN BLINDADA: Ignora espacios en blanco extras y mayúsculas/minúsculas
                     string checkQuery = @"
                         SELECT COUNT(*) FROM medicamentos 
                         WHERE TRIM(LOWER(nombre_Medicamento)) = TRIM(LOWER(@nombre)) 

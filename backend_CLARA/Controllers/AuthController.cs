@@ -33,9 +33,9 @@ namespace backend_CLARA.Controllers
 
                     int? idUsuario = null;
                     string dbPassword = null;
-                    string estatusUsuario = null; // ✨ Variable para guardar el estatus
+                    string estatusUsuario = null; // Variable para guardar el estatus
 
-                    // ✨ 1. Extraemos los datos y cruzamos con la tabla ESTATUS
+                    // 1. Extraemos los datos y cruzamos con la tabla ESTATUS
                     string Query = @"SELECT u.id_Usuario, u.password_Usuario, e.nombre 
                                      FROM usuarios u 
                                      INNER JOIN estatus e ON u.id_Estatus = e.id_Estatus 
@@ -55,13 +55,13 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // ✨ NUEVO BLOQUEO: Si el estatus es inactivo, lo sacamos de inmediato
+                    // NUEVO BLOQUEO: Si el estatus es inactivo, lo sacamos de inmediato
                     if (estatusUsuario == "Inactivo" || estatusUsuario == "INACTIVO" || estatusUsuario == "inactivo")
                     {
                         return Unauthorized(new { error = "Tu cuenta se encuentra inactiva. Contacta al administrador." });
                     }
 
-                    // ✨ 2. Si el usuario existe y está activo, evaluamos la contraseña
+                    // 2. Si el usuario existe y está activo, evaluamos la contraseña
                     if (idUsuario != null && dbPassword != null)
                     {
                         bool isValid = false;
@@ -82,7 +82,7 @@ namespace backend_CLARA.Controllers
                             }
                         }
 
-                        // ✨ 3. Si la contraseña (plana o hash) fue correcta, lo dejamos entrar
+                        // 3. Si la contraseña (plana o hash) fue correcta, lo dejamos entrar
                         if (isValid)
                         {
                             // Si entró con texto plano, la encriptamos de inmediato en la Base de Datos
@@ -251,7 +251,7 @@ namespace backend_CLARA.Controllers
                         return BadRequest(new { error = "La nueva contraseña no puede ser igual a la anterior." });
                     }
 
-                    // ✨ ENCRIPTAMOS ANTES DE ACTUALIZAR
+                    // ENCRIPTAMOS ANTES DE ACTUALIZAR
                     string newHash = BCrypt.Net.BCrypt.HashPassword(request.NuevaPassword);
 
                     string queryUpdate = "UPDATE usuarios SET password_Usuario = @newpass WHERE email_Usuario = @correo";

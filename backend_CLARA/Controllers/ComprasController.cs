@@ -310,7 +310,7 @@ namespace backend_CLARA.Controllers
                             }
                         }
 
-                        // ✨ REGLA 2: VALIDAR SI HAY STOCK SUFICIENTE ANTES DE CANCELAR LA COMPRA
+                        // REGLA 2: VALIDAR SI HAY STOCK SUFICIENTE ANTES DE CANCELAR LA COMPRA
                         foreach (var v in viejos)
                         {
                             using (var cmdVal = new MySqlCommand("SELECT stock_Medicamento, nombre_Medicamento FROM medicamentos WHERE id_Medicamento = @m", conn, trans))

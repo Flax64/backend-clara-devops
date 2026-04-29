@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
+using System.Transactions;
 
 namespace backend_CLARA.Controllers
 {
@@ -72,7 +73,7 @@ namespace backend_CLARA.Controllers
         public IActionResult EliminarVenta(int id)
         {
             try
-            {
+            { 
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
@@ -80,6 +81,19 @@ namespace backend_CLARA.Controllers
                     {
                         try
                         {
+                            // REGLA: NO CANCELAR DESPUÉS DE 24 HORAS
+                            using (var cmdFecha = new MySqlCommand("SELECT fecha_Venta FROM ventas WHERE id_Venta = @id", conn, transaccion))
+                            {
+                                cmdFecha.Parameters.AddWithValue("@id", id);
+                                var resFecha = cmdFecha.ExecuteScalar();
+                                if (resFecha == null) return NotFound(new { error = "La venta no existe." });
+
+                                DateTime fechaVenta = Convert.ToDateTime(resFecha);
+                                if ((DateTime.Today - fechaVenta.Date).TotalDays > 1)
+                                {
+                                    return BadRequest(new { error = "El corte de caja ya pasó. No se puede cancelar una venta después de 24 horas." });
+                                }
+                            }
                             int estatusActual = 0;
                             using (var cmdCheck = new MySqlCommand("SELECT id_Estatus FROM ventas WHERE id_Venta = @id", conn, transaccion))
                             {
@@ -125,7 +139,7 @@ namespace backend_CLARA.Controllers
                                 cmdVenta.ExecuteNonQuery();
                             }
 
-                            // ✨ 3. CORRECCIÓN: Si tenía consulta, la regresamos a estado "Activo" para poder volver a surtirla
+                            // 3. CORRECCIÓN: Si tenía consulta, la regresamos a estado "Activo" para poder volver a surtirla
                             if (idConsultaRevertir.HasValue)
                             {
                                 string queryRevConsulta = "UPDATE consultas SET id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1) WHERE id_Consulta = @idConsulta";
@@ -325,6 +339,19 @@ namespace backend_CLARA.Controllers
                     {
                         try
                         {
+                            // REGLA: NO EDITAR DESPUÉS DE 24 HORAS
+                            using (var cmdFecha = new MySqlCommand("SELECT fecha_Venta FROM ventas WHERE id_Venta = @id", conn, transaccion))
+                            {
+                                cmdFecha.Parameters.AddWithValue("@id", id);
+                                var resFecha = cmdFecha.ExecuteScalar();
+                                if (resFecha == null) return NotFound(new { error = "La venta no existe." });
+
+                                DateTime fechaVenta = Convert.ToDateTime(resFecha);
+                                if ((DateTime.Today - fechaVenta.Date).TotalDays > 1)
+                                {
+                                    return BadRequest(new { error = "Por motivos de auditoría, no se puede editar una venta después de 24 horas." });
+                                }
+                            }
                             string queryUpdate = "UPDATE ventas SET nombre_Cliente = @cliente, id_Metodo = @metodo, total_Venta = @total WHERE id_Venta = @id";
                             using (MySqlCommand cmd = new MySqlCommand(queryUpdate, conn, transaccion))
                             {
@@ -468,7 +495,7 @@ namespace backend_CLARA.Controllers
         }
 
         // =======================================================
-        // GET: OBTENER PACIENTES CON CONSULTAS (Para el buscador)
+        // GET: OBTENER TODOS LOS PACIENTES Y BUSCAR SUS RECETAS
         // =======================================================
         [HttpGet("consultas-pendientes")]
         public IActionResult ObtenerConsultasPendientes()
@@ -479,16 +506,23 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ✨ CORRECCIÓN: Buscamos las consultas que están "Activas" (listas para cobrar)
+                    // Traer a todos los pacientes y, si tienen receta reciente, anexa el ID (si no, pone 0)
                     string query = @"
-                    SELECT c.id_Consulta, CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Paciente 
-                    FROM consultas c
-                    INNER JOIN citas ci ON c.id_Cita = ci.id_Cita
-                    INNER JOIN pacientes p ON ci.id_Paciente = p.id_Paciente
+                    SELECT 
+                        CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Paciente,
+                        COALESCE((
+                            SELECT c.id_Consulta
+                            FROM consultas c
+                            INNER JOIN citas ci ON c.id_Cita = ci.id_Cita
+                            WHERE ci.id_Paciente = p.id_Paciente
+                              AND c.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1) 
+                              AND ci.fecha_Cita >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
+                            ORDER BY c.id_Consulta DESC LIMIT 1
+                        ), 0) AS id_Consulta
+                    FROM pacientes p
                     INNER JOIN usuarios u ON p.id_Usuario = u.id_Usuario
-                    WHERE c.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1) 
-                    AND ci.fecha_Cita >= DATE_SUB(CURDATE(), INTERVAL 7 DAY)
-                    ORDER BY c.id_Consulta DESC LIMIT 50";
+                    WHERE u.id_Estatus = (SELECT id_Estatus FROM estatus WHERE nombre = 'Activo' LIMIT 1)
+                    ORDER BY nombre_Paciente ASC";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     using (MySqlDataReader reader = cmd.ExecuteReader())
@@ -507,7 +541,7 @@ namespace backend_CLARA.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { error = "Error al obtener la lista de pacientes en espera. Detalles: " + ex.Message });
+                return StatusCode(500, new { error = "Error al obtener la lista de pacientes. Detalles: " + ex.Message });
             }
         }
 

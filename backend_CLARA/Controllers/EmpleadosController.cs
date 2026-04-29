@@ -110,7 +110,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // ✨ GENERAMOS EL HASH ANTES DE INSERTAR
+                    // GENERAMOS EL HASH ANTES DE INSERTAR
                     string hashPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);
 
                     string query = @"INSERT INTO usuarios 
@@ -201,7 +201,7 @@ namespace backend_CLARA.Controllers
                         cmd.Parameters.AddWithValue("@telefono", request.Telefono);
                         cmd.Parameters.AddWithValue("@fechaNac", request.FechaNacimiento);
 
-                        // ✨ GENERAMOS EL HASH DE LA NUEVA CONTRASEÑA
+                        // GENERAMOS EL HASH DE LA NUEVA CONTRASEÑA
                         if (!string.IsNullOrWhiteSpace(request.Password))
                         {
                             string hashPassword = BCrypt.Net.BCrypt.HashPassword(request.Password);

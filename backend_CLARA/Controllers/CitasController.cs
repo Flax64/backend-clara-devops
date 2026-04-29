@@ -446,7 +446,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ✨ Filtramos por médico
+                    // Filtramos por médico
                     string queryHorarios = "SELECT hora_Entrada, hora_Salida FROM horarios WHERE id_Dia = @dia AND id_Medico = @medico";
                     List<Tuple<TimeSpan, TimeSpan>> rangosMedicos = new List<Tuple<TimeSpan, TimeSpan>>();
 
@@ -478,7 +478,7 @@ namespace backend_CLARA.Controllers
 
                     horasGeneradas.Sort();
 
-                    // ✨ Chocamos colisiones solo para el médico seleccionado
+                    // Chocamos colisiones solo para el médico seleccionado
                     string queryOcupadas = @"
                         SELECT TIME_FORMAT(hora_Cita, '%H:%i') 
                         FROM citas 

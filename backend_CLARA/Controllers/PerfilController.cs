@@ -191,7 +191,7 @@ namespace backend_CLARA.Controllers
                     string nombreCompleto = "";
                     List<string> permisosList = new List<string>();
 
-                    // ✨ 1. Obtenemos el Rol y el Nombre del usuario al mismo tiempo
+                    // 1. Obtenemos el Rol y el Nombre del usuario al mismo tiempo
                     string queryRol = @"SELECT r.nombre, u.nombre_Usuario, u.apellido_P 
                                         FROM usuarios u 
                                         INNER JOIN roles r ON u.id_Rol = r.id_Rol 
@@ -235,7 +235,7 @@ namespace backend_CLARA.Controllers
                         }
                     }
 
-                    // ✨ 3. Devolvemos todo empaquetado
+                    // 3. Devolvemos todo empaquetado
                     return Ok(new { rol = rolName, permisos = permisosList, nombre = nombreCompleto });
                 }
             }
