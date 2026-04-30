@@ -97,7 +97,9 @@ namespace backend_CLARA.Controllers
                                     cmdUpd.ExecuteNonQuery();
                                 }
                             }
-                            return Ok(new { message = "AUTORIZADO" });
+
+                            // CORRECCIÓN AQUÍ: Ahora enviamos el idUsuario de regreso a Visual Basic
+                            return Ok(new { message = "AUTORIZADO", idUsuario = idUsuario.Value });
                         }
                     }
 
