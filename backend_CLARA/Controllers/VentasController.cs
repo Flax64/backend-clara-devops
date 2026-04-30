@@ -506,7 +506,7 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // ✨ MAGIA SQL (UNION): 
+                    // MAGIA SQL (UNION): 
                     // Parte 1: Busca a los pacientes con receta y les agrega la fecha al lado de su nombre.
                     // Parte 2: Agrega a todos los pacientes normales con ID 0 para ventas libres.
                     string query = @"
