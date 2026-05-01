@@ -104,10 +104,12 @@ namespace backend_CLARA.Controllers
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    // Buscamos estatus 'Completada' para asegurarnos de no incluir las 'Canceladas'
-                    string query = @"SELECT v.id_Venta, v.fecha_Venta, v.hora_Venta, v.nombre_Cliente, v.total_Venta 
+                    // Modificamos el JOIN para incluir la tabla de usuarios y traer el nombre del vendedor
+                    string query = @"SELECT v.id_Venta, v.fecha_Venta, v.hora_Venta, v.nombre_Cliente, v.total_Venta, 
+                                            CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS nombre_Vendedor
                                      FROM ventas v
                                      INNER JOIN estatus e ON v.id_Estatus = e.id_Estatus
+                                     INNER JOIN usuarios u ON v.id_Usuario = u.id_Usuario
                                      WHERE v.fecha_Venta BETWEEN @inicio AND @fin 
                                      AND e.nombre = 'Completada' 
                                      ORDER BY v.fecha_Venta DESC, v.hora_Venta DESC";
@@ -121,7 +123,6 @@ namespace backend_CLARA.Controllers
                         {
                             while (reader.Read())
                             {
-                                // Parseo seguro de la hora (TimeSpan)
                                 string horaFormateada = "--:--";
                                 if (reader["hora_Venta"] != DBNull.Value)
                                 {
@@ -135,6 +136,7 @@ namespace backend_CLARA.Controllers
                                     Fecha = Convert.ToDateTime(reader["fecha_Venta"]).ToString("dd/MM/yyyy"),
                                     Hora = horaFormateada,
                                     Cliente = reader["nombre_Cliente"]?.ToString() ?? "Público General",
+                                    Vendedor = reader["nombre_Vendedor"].ToString(), // ✨ LO AGREGAMOS AL JSON
                                     Total = reader["total_Venta"]
                                 });
                             }
