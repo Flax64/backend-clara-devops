@@ -7,8 +7,7 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddOpenApi();
 
-builder.WebHost.UseUrls("http://*:8080");
-
+builder.WebHost.UseUrls("http://*:5133");
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
