@@ -2,6 +2,7 @@
 using MySql.Data.MySqlClient;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace backend_CLARA.Controllers
 {
@@ -51,21 +52,43 @@ namespace backend_CLARA.Controllers
             }
         }
 
-        // 2. Obtener historial médico
+        // 2. Obtener historial médico COMPLETO (Con Receta)
         [HttpGet("historial/{id}")]
         public IActionResult GetHistorialPaciente(int id)
         {
             try
             {
-                List<object> historial = new List<object>();
+                // ✨ Usamos un Diccionario para agrupar las recetas dentro de su respectiva consulta
+                var historialDict = new Dictionary<int, Dictionary<string, object>>();
+
                 using (MySqlConnection conn = new MySqlConnection(_connectionString))
                 {
                     conn.Open();
-                    string query = @"SELECT ci.fecha_Cita, co.sintomas_Consulta, co.diagnostico_Consulta, co.peso, co.altura
+                    // ✨ Hacemos LEFT JOIN para incluir medicamentos y la tabla medicos/usuarios para saber quién lo atendió.
+                    string query = @"SELECT 
+                                        co.id_Consulta, 
+                                        ci.fecha_Cita, 
+                                        ci.hora_Cita,
+                                        co.sintomas_Consulta, 
+                                        co.diagnostico_Consulta, 
+                                        co.observaciones_Consulta, 
+                                        co.peso, 
+                                        co.altura,
+                                        CONCAT(u.nombre_Usuario, ' ', u.apellido_P) AS medico_Atendio,
+                                        m.nombre_Medicamento, 
+                                        m.concentracion_Valor, 
+                                        m.concentracion_Unidad,
+                                        dr.dosis, 
+                                        dr.frecuencia, 
+                                        dr.duracion
                                      FROM citas ci
                                      INNER JOIN consultas co ON ci.id_Cita = co.id_Cita
+                                     INNER JOIN medicos med ON ci.id_Medico = med.id_Medico
+                                     INNER JOIN usuarios u ON med.id_Usuario = u.id_Usuario
+                                     LEFT JOIN detalle_receta dr ON co.id_Consulta = dr.id_Consulta
+                                     LEFT JOIN medicamentos m ON dr.id_Medicamento = m.id_Medicamento
                                      WHERE ci.id_Paciente = @id 
-                                     ORDER BY ci.fecha_Cita DESC";
+                                     ORDER BY ci.fecha_Cita DESC, ci.hora_Cita DESC";
 
                     using (MySqlCommand cmd = new MySqlCommand(query, conn))
                     {
@@ -74,19 +97,57 @@ namespace backend_CLARA.Controllers
                         {
                             while (reader.Read())
                             {
-                                historial.Add(new
+                                int idConsulta = Convert.ToInt32(reader["id_Consulta"]);
+
+                                // 1. Si es la primera vez que leemos esta consulta, creamos su "expediente" principal
+                                if (!historialDict.ContainsKey(idConsulta))
                                 {
-                                    Fecha = Convert.ToDateTime(reader["fecha_Cita"]).ToString("dd/MM/yyyy"),
-                                    Sintomas = reader["sintomas_Consulta"],
-                                    Diagnostico = reader["diagnostico_Consulta"],
-                                    Peso = reader["peso"],
-                                    Altura = reader["altura"]
-                                });
+                                    string horaFormateada = "--:--";
+                                    if (reader["hora_Cita"] != DBNull.Value)
+                                    {
+                                        TimeSpan tiempo = (TimeSpan)reader["hora_Cita"];
+                                        horaFormateada = new DateTime(tiempo.Ticks).ToString("hh:mm tt");
+                                    }
+
+                                    historialDict[idConsulta] = new Dictionary<string, object>
+                                    {
+                                        { "IdConsulta", idConsulta },
+                                        { "Fecha", Convert.ToDateTime(reader["fecha_Cita"]).ToString("dd/MM/yyyy") },
+                                        { "Hora", horaFormateada },
+                                        { "Medico", reader["medico_Atendio"].ToString() },
+                                        { "Sintomas", reader["sintomas_Consulta"].ToString() },
+                                        { "Diagnostico", reader["diagnostico_Consulta"].ToString() },
+                                        { "Observaciones", reader["observaciones_Consulta"]?.ToString() ?? "Sin observaciones" },
+                                        { "Peso", reader["peso"] },
+                                        { "Altura", reader["altura"] },
+                                        { "Receta", new List<object>() } // ✨ Creamos una lista vacía para guardar los medicamentos de esta consulta
+                                    };
+                                }
+
+                                // 2. Verificamos si en esta fila viene un medicamento adjunto (Gracias al LEFT JOIN)
+                                if (reader["nombre_Medicamento"] != DBNull.Value)
+                                {
+                                    decimal valor = Convert.ToDecimal(reader["concentracion_Valor"]);
+                                    string concentracion = $"({valor:0.##}{reader["concentracion_Unidad"]})";
+
+                                    // Obtenemos la lista de receta de esta consulta específica y le agregamos la medicina
+                                    var recetaList = (List<object>)historialDict[idConsulta]["Receta"];
+                                    recetaList.Add(new
+                                    {
+                                        Medicamento = $"{reader["nombre_Medicamento"]} {concentracion}",
+                                        Dosis = reader["dosis"].ToString(),
+                                        Frecuencia = reader["frecuencia"].ToString(),
+                                        Duracion = reader["duracion"].ToString()
+                                    });
+                                }
                             }
                         }
                     }
                 }
-                return Ok(historial);
+
+                // Convertimos el diccionario a una lista simple para enviarlo limpiamente al frontend
+                var historialFinal = historialDict.Values.ToList();
+                return Ok(historialFinal);
             }
             catch (Exception ex)
             {
